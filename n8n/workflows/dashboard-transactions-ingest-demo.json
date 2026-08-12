@@ -1,0 +1,84 @@
+{
+  "name": "Dashboard Transactions - Ingest Demo",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "d8b13f57-9c90-4b7e-b1be-2e2c4394c6df",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            { "name": "bankName", "value": "Wells Fargo" },
+            { "name": "accountName", "value": "Martinez Global Company" },
+            { "name": "senderName", "value": "John Doe" },
+            { "name": "currency", "value": "USD" },
+            { "name": "confirmationCode", "value": "={{`WF-${Date.now()}`}}" },
+            { "name": "occurredAt", "value": "={{new Date().toISOString()}}" }
+          ],
+          "number": [{ "name": "amount", "value": 150 }]
+        }
+      },
+      "id": "d1d4f5b0-6df4-4d8e-b60a-4c5b9a2f1785",
+      "name": "Set Demo Transaction",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.DASHBOARD_BASE_URL}}/api/transactions",
+        "jsonParameters": true,
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "={{`Bearer ${$env.N8N_INGEST_API_KEY}`}}" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParametersJson": "={{JSON.stringify($json)}}",
+        "options": {
+          "ignoreResponseCode": true,
+          "fullResponse": true
+        }
+      },
+      "id": "c0f4c5f0-9b39-4d65-9efb-2dcf2b8a5f26",
+      "name": "POST /api/transactions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const ok = new Set([200, 409])\n\nfor (const item of items) {\n  const statusCode = item.json?.statusCode\n  if (!ok.has(statusCode)) {\n    const body = item.json?.body ?? item.json\n    throw new Error(`Unexpected statusCode=${statusCode}: ${JSON.stringify(body)}`)\n  }\n}\n\nreturn items"
+      },
+      "id": "a6c1d2f7-0f41-42e6-87ea-8c0c9e6f8930",
+      "name": "Assert OK (200/409)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Set Demo Transaction", "type": "main", "index": 0 }]]
+    },
+    "Set Demo Transaction": {
+      "main": [[{ "node": "POST /api/transactions", "type": "main", "index": 0 }]]
+    },
+    "POST /api/transactions": {
+      "main": [[{ "node": "Assert OK (200/409)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
