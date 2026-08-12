@@ -158,6 +158,7 @@ export function FinancesView() {
   const [movementDrafts, setMovementDrafts] = useState<Record<string, MovementDraft>>({});
   const [savingMovementById, setSavingMovementById] = useState<Record<string, boolean>>({});
   const [expandedCounterpartyIds, setExpandedCounterpartyIds] = useState<Record<string, boolean>>({});
+  const [loadedCounterpartyMovementIds, setLoadedCounterpartyMovementIds] = useState<Record<string, boolean>>({});
   const [counterpartyToDelete, setCounterpartyToDelete] = useState<FinanceCounterparty | null>(null);
   const [deletingCounterparty, setDeletingCounterparty] = useState(false);
   const [deleteCounterpartyError, setDeleteCounterpartyError] = useState<string | null>(null);
@@ -165,11 +166,13 @@ export function FinancesView() {
   const loadOverview = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/finances", { cache: "no-store" });
-      if (!response.ok) return;
+      const response = await fetch("/api/finances?view=summary", { cache: "no-store" });
+      if (!response?.ok) return;
       const payload = (await response.json()) as { ok?: boolean; overview?: FinanceOverview };
       if (!payload.ok || !payload.overview) return;
       setOverview(payload.overview);
+      setExpandedCounterpartyIds({});
+      setLoadedCounterpartyMovementIds({});
       setCashUsd(formatFinanceNumberInput(payload.overview.settings.cashUsd));
       setCashCup(formatFinanceNumberInput(payload.overview.settings.cashCup));
       setUsdCupRate(
@@ -194,11 +197,20 @@ export function FinancesView() {
     }));
   };
 
-  const toggleCounterparty = (id: string) => {
-    setExpandedCounterpartyIds((current) => ({
+  const toggleCounterparty = async (id: string) => {
+    const willExpand = !expandedCounterpartyIds[id];
+    setExpandedCounterpartyIds((current) => ({ ...current, [id]: willExpand }));
+    const counterparty = overview?.counterparties.find((item) => item.id === id);
+    if (!willExpand || !overview || !counterparty || loadedCounterpartyMovementIds[id]) return;
+    const response = await fetch(`/api/finances/counterparties/${id}/movements?limit=20`, { cache: "no-store" });
+    if (!response?.ok) return;
+    const payload = await response.json() as { ok?: boolean; movements?: FinanceCounterparty["movements"] };
+    if (!payload.ok || !Array.isArray(payload.movements)) return;
+    setLoadedCounterpartyMovementIds((current) => ({ ...current, [id]: true }));
+    setOverview((current) => current ? {
       ...current,
-      [id]: !current[id],
-    }));
+      counterparties: current.counterparties.map((item) => item.id === id ? { ...item, movements: payload.movements! } : item),
+    } : current);
   };
 
   const saveSettings = async () => {

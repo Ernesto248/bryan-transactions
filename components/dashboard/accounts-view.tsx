@@ -19,6 +19,7 @@ import type {
   AccountMovement,
   AccountMovementType,
   FinanceCurrency,
+  TransactionFeedPageInfo,
   WireFifoPreview,
 } from "@/lib/types";
 
@@ -35,10 +36,11 @@ type AccountMovementInput = {
 type AccountsViewProps = {
   accounts: AccountBalance[];
   movementsByAccount: Record<string, AccountMovement[]>;
+  movementPagesByAccount?: Record<string, TransactionFeedPageInfo>;
   loadingAccounts: boolean;
   loadingMovementsByAccount: Record<string, boolean>;
   onRefreshAccounts: () => Promise<void>;
-  onLoadMovements: (accountId: string) => Promise<void>;
+  onLoadMovements: (accountId: string, append?: boolean) => Promise<void>;
   onCreateMovement: (
     accountId: string,
     input: AccountMovementInput,
@@ -53,6 +55,7 @@ type AccountsViewProps = {
 export function AccountsView({
   accounts,
   movementsByAccount,
+  movementPagesByAccount = {},
   loadingAccounts,
   loadingMovementsByAccount,
   onRefreshAccounts,
@@ -668,6 +671,11 @@ export function AccountsView({
                         <p className="text-sm text-muted-foreground">
                           Esta cuenta no tiene movimientos manuales.
                         </p>
+                      )}
+                      {movementPagesByAccount[account.id]?.hasMore && (
+                        <Button type="button" variant="outline" size="sm" className="w-full" disabled={loadingMovements} onClick={() => void onLoadMovements(account.id, true)}>
+                          {loadingMovements ? "Cargando..." : "Cargar más movimientos"}
+                        </Button>
                       )}
                     </div>
                   </div>

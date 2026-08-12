@@ -21,6 +21,7 @@ export type Transaction = {
   type: TransactionType;
   assignedRemeseroId?: string | null;
   assignedRemeseroNombre?: string | null;
+  assignmentHistoryCount?: number;
 };
 
 export type Remesero = {
@@ -362,4 +363,44 @@ export type FinanceOverview = {
   expenses: FinanceExpense[];
   cashMovements: FinanceCashMovement[];
   exchanges: FinanceCurrencyExchange[];
+};
+
+export type TransactionFeedPageInfo = {
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type TransactionFeedDistribution = { name: string; value: number };
+
+export type TransactionFeedChartPoint = {
+  date: string;
+  bank: string;
+  accountName: string;
+  amount: number;
+};
+
+export type TransactionFeedSummary = {
+  totalTransactions: number;
+  totalAmount: number;
+  avgTransaction: number;
+  todayTransactions: number;
+  todayTransactionsTrend: number | null;
+  totalAmountTrend: number | null;
+  bankTotals: Array<{ bank: string; totalAmount: number }>;
+  bankDistribution: TransactionFeedDistribution[];
+  accountDistribution: TransactionFeedDistribution[];
+  chartPoints: TransactionFeedChartPoint[];
+};
+
+export type TransactionFeedFilterOptions = {
+  banks: string[];
+  accounts: string[];
+  remeseros: string[];
+};
+
+export type TransactionFeed = {
+  transactions: Transaction[];
+  pageInfo: TransactionFeedPageInfo;
+  summary: TransactionFeedSummary;
+  filterOptions: TransactionFeedFilterOptions;
 };

@@ -1,3 +1,4 @@
+
 import { getPool } from "@/lib/db";
 import {
   calculateCapitalTotal,
@@ -24,99 +25,95 @@ function toNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
 }
-
-export async function GET() {
+export async function GET(request?: Request) {
   const client = await getPool().connect();
 
   try {
-    const [stateResult, zelleInventories, remeserosResult, counterpartiesResult, movementsResult, changesResult, expensesResult, cashMovementsResult, exchangesResult] =
-      await Promise.all([
-        client.query(`
-          SELECT cash_usd as "cashUsd", cash_cup as "cashCup",
-                 usd_cup_rate as "usdCupRate", updated_at as "updatedAt"
-          FROM finance_state WHERE id = 1
-        `),
-        loadZelleInventories(client),
-        client.query(`
-          SELECT
-            COALESCE(SUM(GREATEST(-deuda_actual, 0)), 0) as "receivableCup",
-            COALESCE(SUM(GREATEST(deuda_actual, 0)), 0) as "payableCup",
-            COALESCE(-SUM(deuda_actual), 0) as "netCup"
-          FROM remeseros WHERE deleted_at IS NULL
-        `),
-        client.query(`
-          SELECT c.id, c.name, c.archived_at as "archivedAt",
-                 c.created_at as "createdAt", c.updated_at as "updatedAt",
-                 COALESCE(SUM(CASE WHEN m.currency = 'USD' THEN
-                   COALESCE(m.signed_delta,
-                     CASE WHEN m.movement_type IN ('RECEIVABLE', 'PAID') THEN m.amount ELSE -m.amount END)
-                 ELSE 0 END), 0) as "balanceUsd",
-                 COALESCE(SUM(CASE WHEN m.currency = 'CUP' THEN
-                   COALESCE(m.signed_delta,
-                     CASE WHEN m.movement_type IN ('RECEIVABLE', 'PAID') THEN m.amount ELSE -m.amount END)
-                 ELSE 0 END), 0) as "balanceCup"
-          FROM finance_counterparties c
-          LEFT JOIN finance_debt_movements m
-            ON m.counterparty_id = c.id AND m.reverted_at IS NULL
+    const summaryView = request
+      ? new URL(request.url).searchParams.get("view") === "summary"
+      : false;
+    const [coreResult, zelleInventories, counterpartiesResult, movementsResult] = await Promise.all([
+      client.query(`
+        SELECT
+          (SELECT row_to_json(state_row) FROM (
+            SELECT cash_usd as "cashUsd", cash_cup as "cashCup",
+                   usd_cup_rate as "usdCupRate", updated_at as "updatedAt"
+            FROM finance_state WHERE id = 1
+          ) state_row) AS state,
+          (SELECT row_to_json(remesero_row) FROM (
+            SELECT COALESCE(SUM(GREATEST(-deuda_actual, 0)), 0) as "receivableCup",
+                   COALESCE(SUM(GREATEST(deuda_actual, 0)), 0) as "payableCup",
+                   COALESCE(-SUM(deuda_actual), 0) as "netCup"
+            FROM remeseros WHERE deleted_at IS NULL
+          ) remesero_row) AS remeseros,
+          (SELECT COALESCE(json_agg(row_to_json(change_row)), '[]') FROM (
+            SELECT id, field_name as "fieldName", previous_value as "previousValue",
+                   new_value as "newValue", note, changed_at as "changedAt"
+            FROM finance_state_changes ORDER BY changed_at DESC LIMIT 10
+          ) change_row) AS changes,
+          (SELECT COALESCE(json_agg(row_to_json(expense_row)), '[]') FROM (
+            SELECT id, currency, amount, description,
+                   balance_before as "balanceBefore", balance_after as "balanceAfter",
+                   occurred_at as "occurredAt"
+            FROM finance_expenses ORDER BY occurred_at DESC, created_at DESC LIMIT 10
+          ) expense_row) AS expenses,
+          (SELECT COALESCE(json_agg(row_to_json(exchange_row)), '[]') FROM (
+            SELECT id, direction, source_amount as "sourceAmount", rate,
+                   target_amount as "targetAmount", note,
+                   occurred_at as "occurredAt", reverted_at as "revertedAt",
+                   reverted_reason as "revertedReason"
+            FROM finance_currency_exchanges ORDER BY occurred_at DESC, created_at DESC LIMIT 10
+          ) exchange_row) AS exchanges,
+          CASE WHEN $1::boolean THEN '[]'::json ELSE
+            (SELECT COALESCE(json_agg(row_to_json(cash_row)), '[]') FROM (
+              SELECT id, currency, signed_amount as "signedAmount",
+                     balance_before as "balanceBefore", balance_after as "balanceAfter",
+                     operation_type as "operationType", operation_id as "operationId",
+                     reversal_of_id as "reversalOfId", note, occurred_at as "occurredAt"
+              FROM finance_cash_movements ORDER BY occurred_at DESC, created_at DESC LIMIT 20
+            ) cash_row)
+          END AS cash_movements
+      `, [summaryView]),
+      loadZelleInventories(client),
+      client.query(`
+        SELECT c.id, c.name, c.archived_at as "archivedAt",
+               c.created_at as "createdAt", c.updated_at as "updatedAt",
+               COALESCE(SUM(CASE WHEN m.currency = 'USD' THEN
+                 COALESCE(m.signed_delta, CASE WHEN m.movement_type IN ('RECEIVABLE', 'PAID') THEN m.amount ELSE -m.amount END)
+               ELSE 0 END), 0) as "balanceUsd",
+               COALESCE(SUM(CASE WHEN m.currency = 'CUP' THEN
+                 COALESCE(m.signed_delta, CASE WHEN m.movement_type IN ('RECEIVABLE', 'PAID') THEN m.amount ELSE -m.amount END)
+               ELSE 0 END), 0) as "balanceCup"
+        FROM finance_counterparties c
+        LEFT JOIN finance_debt_movements m ON m.counterparty_id = c.id AND m.reverted_at IS NULL
+        WHERE c.archived_at IS NULL GROUP BY c.id ORDER BY c.name
+      `),
+      summaryView ? Promise.resolve({ rows: [] }) : client.query(`
+        WITH ranked AS (
+          SELECT m.*, row_number() OVER (
+            PARTITION BY m.counterparty_id ORDER BY m.occurred_at DESC, m.created_at DESC
+          ) AS row_number
+          FROM finance_debt_movements m
+          JOIN finance_counterparties c ON c.id = m.counterparty_id
           WHERE c.archived_at IS NULL
-          GROUP BY c.id
-          ORDER BY c.name
-        `),
-        client.query(`
-          WITH ranked AS (
-            SELECT m.*,
-                   row_number() OVER (
-                     PARTITION BY m.counterparty_id
-                     ORDER BY m.occurred_at DESC, m.created_at DESC
-                   ) AS row_number
-            FROM finance_debt_movements m
-            JOIN finance_counterparties c ON c.id = m.counterparty_id
-            WHERE c.archived_at IS NULL
-          )
-          SELECT id, counterparty_id as "counterpartyId", currency,
-                 movement_type as "movementType", amount, note,
-                 signed_delta as "signedDelta",
-                 balance_before as "balanceBefore", balance_after as "balanceAfter",
-                 cash_movement_id as "cashMovementId",
-                 source_type as "sourceType", source_id as "sourceId",
-                 occurred_at as "occurredAt", reverted_at as "revertedAt",
-                 reverted_reason as "revertedReason"
-          FROM ranked WHERE row_number <= 10
-          ORDER BY occurred_at DESC, id
-        `),
-        client.query(`
-          SELECT id, field_name as "fieldName", previous_value as "previousValue",
-                 new_value as "newValue", note, changed_at as "changedAt"
-          FROM finance_state_changes
-          ORDER BY changed_at DESC LIMIT 10
-        `),
-        client.query(`
-          SELECT id, currency, amount, description,
-                 balance_before as "balanceBefore", balance_after as "balanceAfter",
-                 occurred_at as "occurredAt"
-          FROM finance_expenses
-          ORDER BY occurred_at DESC, created_at DESC
-          LIMIT 10
-        `),
-        client.query(`
-          SELECT id, currency, signed_amount as "signedAmount",
-                 balance_before as "balanceBefore", balance_after as "balanceAfter",
-                 operation_type as "operationType", operation_id as "operationId",
-                 reversal_of_id as "reversalOfId", note, occurred_at as "occurredAt"
-          FROM finance_cash_movements
-          ORDER BY occurred_at DESC, created_at DESC
-          LIMIT 20
-        `),
-        client.query(`
-          SELECT id, direction, source_amount as "sourceAmount", rate,
-                 target_amount as "targetAmount", note,
-                 occurred_at as "occurredAt", reverted_at as "revertedAt",
-                 reverted_reason as "revertedReason"
-          FROM finance_currency_exchanges
-          ORDER BY occurred_at DESC, created_at DESC
-          LIMIT 10
-        `),
-      ]);
+        )
+        SELECT id, counterparty_id as "counterpartyId", currency,
+               movement_type as "movementType", amount, note,
+               signed_delta as "signedDelta", balance_before as "balanceBefore",
+               balance_after as "balanceAfter", cash_movement_id as "cashMovementId",
+               source_type as "sourceType", source_id as "sourceId",
+               occurred_at as "occurredAt", reverted_at as "revertedAt",
+               reverted_reason as "revertedReason"
+        FROM ranked WHERE row_number <= 10 ORDER BY occurred_at DESC, id
+      `),
+    ]);
+    const core = coreResult.rows[0] ?? {};
+    const stateResult = { rows: [core.state ?? {}] };
+    const remeserosResult = { rows: [core.remeseros ?? {}] };
+    const changesResult = { rows: Array.isArray(core.changes) ? core.changes : [] };
+    const expensesResult = { rows: Array.isArray(core.expenses) ? core.expenses : [] };
+    const cashMovementsResult = { rows: Array.isArray(core.cash_movements) ? core.cash_movements : [] };
+    const exchangesResult = { rows: Array.isArray(core.exchanges) ? core.exchanges : [] };
 
     const state = stateResult.rows[0] ?? {};
     const settings = {

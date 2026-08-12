@@ -44,17 +44,19 @@ describe("finance APIs", () => {
 
   it("returns a complete overview from authoritative sources", async () => {
     const client = createClient([
-      [{ cashUsd: 100, cashCup: 42000, usdCupRate: 420, updatedAt: "2026-08-07T10:00:00.000Z" }],
-      [{ receivableCup: 16000, payableCup: 100000, netCup: -84000 }],
+      [{
+        state: { cashUsd: 100, cashCup: 42000, usdCupRate: 420, updatedAt: "2026-08-07T10:00:00.000Z" },
+        remeseros: { receivableCup: 16000, payableCup: 100000, netCup: -84000 },
+        changes: [],
+        expenses: [{ id: "e-1", currency: "CUP", amount: 500, description: "Mensajeria", balanceBefore: 42000, balanceAfter: 41500, occurredAt: "2026-08-07T10:00:00.000Z" }],
+        cash_movements: [],
+        exchanges: [],
+      }],
       [
         { id: "c-1", name: "Miguel", balanceUsd: 25, balanceCup: 10000, archivedAt: null, createdAt: "2026-08-07T10:00:00.000Z", updatedAt: "2026-08-07T10:00:00.000Z" },
         { id: "c-2", name: "Camila", balanceUsd: -75, balanceCup: -52000, archivedAt: null, createdAt: "2026-08-07T10:00:00.000Z", updatedAt: "2026-08-07T10:00:00.000Z" },
       ],
       [{ id: "m-1", counterpartyId: "c-1", currency: "USD", movementType: "RECEIVABLE", amount: 25, note: null, occurredAt: "2026-08-07T10:00:00.000Z", revertedAt: null, revertedReason: null }],
-      [],
-      [{ id: "e-1", currency: "CUP", amount: 500, description: "Mensajería", balanceBefore: 42000, balanceAfter: 41500, occurredAt: "2026-08-07T10:00:00.000Z" }],
-      [],
-      [],
     ]);
 
     const { GET } = await import("@/app/api/finances/route");
@@ -75,19 +77,14 @@ describe("finance APIs", () => {
       balanceAfter: 41500,
     });
     expect(json.overview.counterparties[0].movements[0].signedAmount).toBe(25);
-    expect(client.query.mock.calls[1][0]).toContain("GREATEST(-deuda_actual, 0)");
-    expect(client.query.mock.calls[1][0]).toContain("-SUM(deuda_actual)");
+    expect(client.query.mock.calls[0][0]).toContain("GREATEST(-deuda_actual, 0)");
+    expect(client.query.mock.calls[0][0]).toContain("-SUM(deuda_actual)");
     expect(client.release).toHaveBeenCalledOnce();
   });
 
   it("returns capital pending when the rate is empty", async () => {
     createClient([
-      [{ cashUsd: 100, cashCup: 0, usdCupRate: null, updatedAt: "2026-08-07T10:00:00.000Z" }],
-      [{ receivableCup: 0, payableCup: 0, netCup: 0 }],
-      [],
-      [],
-      [],
-      [],
+      [{ state: { cashUsd: 100, cashCup: 0, usdCupRate: null, updatedAt: "2026-08-07T10:00:00.000Z" }, remeseros: { receivableCup: 0, payableCup: 0, netCup: 0 }, changes: [], expenses: [], cash_movements: [], exchanges: [] }],
       [],
       [],
     ]);

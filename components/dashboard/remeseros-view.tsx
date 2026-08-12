@@ -29,11 +29,13 @@ import type {
   Remesero,
   RemeseroPayment,
   RemeseroShareSummary,
+  TransactionFeedPageInfo,
 } from "@/lib/types";
 
 type RemeserosViewProps = {
   remeseros: Remesero[];
   paymentsByRemesero: Record<string, RemeseroPayment[]>;
+  paymentPagesByRemesero?: Record<string, TransactionFeedPageInfo>;
   loadingRemeseros: boolean;
   loadingPaymentsByRemesero: Record<string, boolean>;
   onRefreshRemeseros: () => Promise<void>;
@@ -51,7 +53,7 @@ type RemeserosViewProps = {
     },
   ) => Promise<boolean>;
   onDeleteRemesero: (id: string) => Promise<void>;
-  onLoadPayments: (id: string) => Promise<void>;
+  onLoadPayments: (id: string, append?: boolean) => Promise<void>;
   onCreatePayment: (
     id: string,
     input: { amountPaid: number; note?: string },
@@ -69,6 +71,7 @@ type DebtBalanceKind = "deuda" | "fondo";
 export function RemeserosView({
   remeseros,
   paymentsByRemesero,
+  paymentPagesByRemesero = {},
   loadingRemeseros,
   loadingPaymentsByRemesero,
   onRefreshRemeseros,
@@ -830,6 +833,18 @@ export function RemeserosView({
                                 </div>
                               </div>
                             ))
+                          )}
+                          {paymentPagesByRemesero[remesero.id]?.hasMore && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              disabled={loadingPayments}
+                              onClick={() => void onLoadPayments(remesero.id, true)}
+                            >
+                              {loadingPayments ? "Cargando..." : "Cargar más pagos"}
+                            </Button>
                           )}
                         </div>
                       </>

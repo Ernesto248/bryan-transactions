@@ -1,20 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "./header";
 import { MobileNav } from "./mobile-nav";
 import { BottomNav } from "./bottom-nav";
 import { DesktopNav } from "./desktop-nav";
 import { StatCard } from "./stat-card";
 import { TransactionCard } from "./transaction-card";
-import { TransactionsChart } from "./transactions-chart";
-import { BankDistributionChart } from "./bank-distribution-chart";
 import { BankTotalsCard } from "./bank-totals-card";
 import { FilterBar, type DateFilter } from "./filter-bar";
-import { AccountsView } from "./accounts-view";
 import { RemeserosView } from "./remeseros-view";
-import { CreateTransactionDialog } from "./create-transaction-dialog";
 import { Button } from "@/components/ui/button";
 import { DollarSign, TrendingUp, Calendar, Plus } from "lucide-react";
 import {
@@ -27,6 +23,10 @@ import {
   RemeseroPayment,
   RemeseroShareSummary,
   Transaction,
+  TransactionFeed,
+  TransactionFeedFilterOptions,
+  TransactionFeedPageInfo,
+  TransactionFeedSummary,
 } from "@/lib/types";
 import {
   startOfDay,
@@ -34,32 +34,88 @@ import {
   subDays,
   subWeeks,
   subMonths,
-  isWithinInterval,
 } from "date-fns";
 import { consumeDashboardReturnTab } from "@/lib/dashboard-tabs";
 
 interface DashboardProps {
   initialTransactions: Transaction[];
+  initialFeed?: TransactionFeed;
 }
+
+const AccountsView = dynamic(
+  () => import("./accounts-view").then((module) => module.AccountsView),
+  { loading: () => <p className="text-sm text-muted-foreground">Cargando cuentas...</p> },
+);
+
+const TransactionsChart = dynamic(
+  () => import("./transactions-chart").then((module) => module.TransactionsChart),
+  { loading: () => <div className="h-[300px] animate-pulse rounded-lg bg-secondary/40" /> },
+);
+
+const BankDistributionChart = dynamic(
+  () => import("./bank-distribution-chart").then((module) => module.BankDistributionChart),
+  { loading: () => <div className="h-[300px] animate-pulse rounded-lg bg-secondary/40" /> },
+);
+
+const CreateTransactionDialog = dynamic(
+  () => import("./create-transaction-dialog").then((module) => module.CreateTransactionDialog),
+);
 
 const FinancesView = dynamic(
   () => import("./finances-view").then((module) => module.FinancesView),
   { loading: () => <p className="text-sm text-muted-foreground">Cargando finanzas...</p> },
 );
 
-export function Dashboard({ initialTransactions }: DashboardProps) {
+const emptyPageInfo: TransactionFeedPageInfo = { hasMore: false, nextCursor: null };
+
+function summaryFromTransactions(items: Transaction[]): TransactionFeedSummary {
+  const totalAmount = items.reduce((sum, item) => sum + item.amount, 0);
+  const banks = new Map<string, number>();
+  const accounts = new Map<string, number>();
+  for (const item of items) {
+    banks.set(item.bank, (banks.get(item.bank) ?? 0) + item.amount);
+    accounts.set(item.accountName, (accounts.get(item.accountName) ?? 0) + item.amount);
+  }
+  const distribution = (map: Map<string, number>) => Array.from(map, ([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+  const bankDistribution = distribution(banks);
+  const accountDistribution = distribution(accounts);
+  return {
+    totalTransactions: items.length, totalAmount,
+    avgTransaction: items.length ? totalAmount / items.length : 0,
+    todayTransactions: items.length, todayTransactionsTrend: null, totalAmountTrend: null,
+    bankTotals: bankDistribution.map(({ name, value }) => ({ bank: name, totalAmount: value })),
+    bankDistribution: bankDistribution.slice(0, 4), accountDistribution: accountDistribution.slice(0, 4),
+    chartPoints: items.map((item) => ({ date: item.createdAt.slice(0, 10), bank: item.bank, accountName: item.accountName, amount: item.amount })),
+  };
+}
+
+function optionsFromTransactions(items: Transaction[]): TransactionFeedFilterOptions {
+  return {
+    banks: Array.from(new Set(items.map((item) => item.bank))).sort(),
+    accounts: Array.from(new Set(items.map((item) => item.accountName))).sort(),
+    remeseros: Array.from(new Set(items.flatMap((item) => item.assignedRemeseroNombre ? [item.assignedRemeseroNombre] : []))).sort(),
+  };
+}
+
+export function Dashboard({ initialTransactions, initialFeed }: DashboardProps) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [transactions, setTransactions] =
     useState<Transaction[]>(initialTransactions);
+  const [transactionSummary, setTransactionSummary] = useState<TransactionFeedSummary>(initialFeed?.summary ?? summaryFromTransactions(initialTransactions));
+  const [transactionFilterOptions, setTransactionFilterOptions] = useState<TransactionFeedFilterOptions>(initialFeed?.filterOptions ?? optionsFromTransactions(initialTransactions));
+  const [transactionPageInfo, setTransactionPageInfo] = useState<TransactionFeedPageInfo>(initialFeed?.pageInfo ?? emptyPageInfo);
+  const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
   const [accounts, setAccounts] = useState<AccountBalance[]>([]);
   const [movementsByAccount, setMovementsByAccount] = useState<
     Record<string, AccountMovement[]>
   >({});
+  const [movementPagesByAccount, setMovementPagesByAccount] = useState<Record<string, TransactionFeedPageInfo>>({});
   const [remeseros, setRemeseros] = useState<Remesero[]>([]);
   const [paymentsByRemesero, setPaymentsByRemesero] = useState<
     Record<string, RemeseroPayment[]>
   >({});
+  const [paymentPagesByRemesero, setPaymentPagesByRemesero] = useState<Record<string, TransactionFeedPageInfo>>({});
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(false);
   const [isLoadingRemeseros, setIsLoadingRemeseros] = useState(false);
@@ -83,6 +139,10 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
     from: Date | undefined;
     to: Date | undefined;
   }>({ from: undefined, to: undefined });
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [debouncedSenderFilter, setDebouncedSenderFilter] = useState("");
+  const [debouncedAmountFilter, setDebouncedAmountFilter] = useState("");
+  const initialFilterRequest = useRef(true);
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [manualBanks, setManualBanks] = useState<Bank[]>([]);
@@ -111,44 +171,60 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
     return new URL(path, window.location.origin).toString();
   };
 
-  const bankOptions = useMemo(() => {
-    return Array.from(new Set(transactions.map((t) => t.bank))).sort((a, b) =>
-      a.localeCompare(b),
-    );
-  }, [transactions]);
+  const bankOptions = transactionFilterOptions.banks;
+  const accountOptions = transactionFilterOptions.accounts;
+  const remeseroOptions = transactionFilterOptions.remeseros;
 
-  const accountOptions = useMemo(() => {
-    return Array.from(new Set(transactions.map((t) => t.accountName))).sort(
-      (a, b) => a.localeCompare(b),
-    );
-  }, [transactions]);
+  const buildTransactionFeedUrl = useCallback((cursor?: string | null) => {
+    const params = new URLSearchParams({ view: "page", status: "active", limit: "30" });
+    if (cursor) params.set("cursor", cursor);
+    if (bankFilter !== "all") params.set("bank", bankFilter);
+    if (accountFilter !== "all") params.set("account", accountFilter);
+    if (debouncedSearchQuery.trim()) params.set("search", debouncedSearchQuery.trim());
+    if (debouncedSenderFilter.trim()) params.set("sender", debouncedSenderFilter.trim());
+    if (debouncedAmountFilter.trim()) params.set("amount", debouncedAmountFilter.trim());
+    if (remeseroFilter !== "all") params.set("remesero", remeseroFilter);
+    const now = new Date();
+    let from: Date | undefined;
+    let to: Date | undefined;
+    if (dateFilter === "today") { from = startOfDay(now); to = endOfDay(now); }
+    else if (dateFilter === "yesterday") { from = startOfDay(subDays(now, 1)); to = endOfDay(subDays(now, 1)); }
+    else if (dateFilter === "week") { from = subWeeks(startOfDay(now), 1); to = endOfDay(now); }
+    else if (dateFilter === "month") { from = subMonths(startOfDay(now), 1); to = endOfDay(now); }
+    else if (dateFilter === "custom" && customDateRange.from) { from = startOfDay(customDateRange.from); to = customDateRange.to ? endOfDay(customDateRange.to) : endOfDay(now); }
+    if (from) params.set("from", from.toISOString());
+    if (to) params.set("to", to.toISOString());
+    return `/api/transactions?${params}`;
+  }, [accountFilter, bankFilter, customDateRange, dateFilter, debouncedAmountFilter, debouncedSearchQuery, debouncedSenderFilter, remeseroFilter]);
 
-  const remeseroOptions = useMemo(() => {
-    return Array.from(
-      new Set(
-        transactions
-          .map((t) => t.assignedRemeseroNombre)
-          .filter((name): name is string => Boolean(name && name.trim())),
-      ),
-    ).sort((a, b) => a.localeCompare(b));
-  }, [transactions]);
-
-  const refreshTransactions = async () => {
+  const refreshTransactions = useCallback(async (options: { append?: boolean; cursor?: string | null; signal?: AbortSignal } = {}) => {
+    setIsLoadingTransactions(true);
     try {
-      const res = await fetch(apiUrl("/api/transactions"), {
+      const res = await fetch(buildTransactionFeedUrl(options.cursor), {
         cache: "no-store",
+        signal: options.signal,
       });
       if (!res.ok) return;
 
       const data = (await res.json()) as {
         ok?: boolean;
         transactions?: Transaction[];
+        pageInfo?: TransactionFeedPageInfo;
+        summary?: TransactionFeedSummary;
+        filterOptions?: TransactionFeedFilterOptions;
       };
 
-      if (!data?.ok || !Array.isArray(data.transactions)) return;
-      setTransactions(data.transactions);
-    } catch {}
-  };
+      if (!data?.ok || !Array.isArray(data.transactions) || !data.pageInfo || !data.summary) return;
+      setTransactions((previous) => options.append ? [...previous, ...data.transactions!] : data.transactions!);
+      setTransactionPageInfo(data.pageInfo);
+      setTransactionSummary(data.summary);
+      if (data.filterOptions) setTransactionFilterOptions(data.filterOptions);
+    } catch (error) {
+      if ((error as Error)?.name !== "AbortError") return;
+    } finally {
+      if (!options.signal?.aborted) setIsLoadingTransactions(false);
+    }
+  }, [buildTransactionFeedUrl]);
 
   const refreshRemeseros = async () => {
     setIsLoadingRemeseros(true);
@@ -190,10 +266,13 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
     }
   };
 
-  const loadAccountMovements = async (accountId: string) => {
+  const loadAccountMovements = async (accountId: string, append = false) => {
     setLoadingMovementsByAccount((prev) => ({ ...prev, [accountId]: true }));
     try {
-      const res = await fetch(apiUrl(`/api/accounts/${accountId}/movements`), {
+      const params = new URLSearchParams({ view: "page", limit: "20" });
+      const cursor = append ? movementPagesByAccount[accountId]?.nextCursor : null;
+      if (cursor) params.set("cursor", cursor);
+      const res = await fetch(apiUrl(`/api/accounts/${accountId}/movements?${params}`), {
         cache: "no-store",
       });
 
@@ -202,14 +281,16 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
       const data = (await res.json()) as {
         ok?: boolean;
         movements?: AccountMovement[];
+        pageInfo?: TransactionFeedPageInfo;
       };
 
       if (!data?.ok || !Array.isArray(data.movements)) return;
       const movements = data.movements;
       setMovementsByAccount((prev) => ({
         ...prev,
-        [accountId]: movements,
+        [accountId]: append ? [...(prev[accountId] ?? []), ...movements] : movements,
       }));
+      if (data.pageInfo) setMovementPagesByAccount((prev) => ({ ...prev, [accountId]: data.pageInfo! }));
     } finally {
       setLoadingMovementsByAccount((prev) => ({ ...prev, [accountId]: false }));
     }
@@ -320,10 +401,13 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
     await refreshRemeseros();
   };
 
-  const loadRemeseroPayments = async (id: string) => {
+  const loadRemeseroPayments = async (id: string, append = false) => {
     setLoadingPaymentsByRemesero((prev) => ({ ...prev, [id]: true }));
     try {
-      const res = await fetch(apiUrl(`/api/remeseros/${id}/payments`), {
+      const params = new URLSearchParams({ view: "page", limit: "20" });
+      const cursor = append ? paymentPagesByRemesero[id]?.nextCursor : null;
+      if (cursor) params.set("cursor", cursor);
+      const res = await fetch(apiUrl(`/api/remeseros/${id}/payments?${params}`), {
         cache: "no-store",
       });
 
@@ -331,11 +415,13 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
       const data = (await res.json()) as {
         ok?: boolean;
         payments?: RemeseroPayment[];
+        pageInfo?: TransactionFeedPageInfo;
       };
 
       if (!data?.ok || !Array.isArray(data.payments)) return;
       const payments = data.payments;
-      setPaymentsByRemesero((prev) => ({ ...prev, [id]: payments }));
+      setPaymentsByRemesero((prev) => ({ ...prev, [id]: append ? [...(prev[id] ?? []), ...payments] : payments }));
+      if (data.pageInfo) setPaymentPagesByRemesero((prev) => ({ ...prev, [id]: data.pageInfo! }));
     } finally {
       setLoadingPaymentsByRemesero((prev) => ({ ...prev, [id]: false }));
     }
@@ -486,211 +572,50 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
   };
 
   useEffect(() => {
-    void Promise.all([refreshRemeseros(), refreshAccounts()]);
-  }, []);
+    const timer = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setDebouncedSenderFilter(senderFilter);
+      setDebouncedAmountFilter(amountFilter);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [amountFilter, searchQuery, senderFilter]);
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
+  useEffect(() => {
+    if (initialFilterRequest.current) {
+      initialFilterRequest.current = false;
+      return;
+    }
+    const controller = new AbortController();
+    void refreshTransactions({ signal: controller.signal });
+    return () => controller.abort();
+  }, [refreshTransactions]);
+
+  useEffect(() => {
+    if ((activeTab === "dashboard" || activeTab === "transactions" || activeTab === "remeseros") && remeseros.length === 0) {
+      void refreshRemeseros();
+    }
+    if (activeTab === "accounts" && accounts.length === 0) {
+      void refreshAccounts();
+    }
+  }, [activeTab]);
+
+  const formatCurrency = (amount: number) => new Intl.NumberFormat("en-US", {
+    style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0,
+  }).format(amount);
+
+  const filteredTransactions = transactions;
+  const stats = {
+    ...transactionSummary,
+    totalAmountTrend: transactionSummary.totalAmountTrend == null ? undefined : {
+      value: transactionSummary.totalAmountTrend,
+      isPositive: transactionSummary.totalAmountTrend >= 0,
+    },
+    todayTransactionsTrend: transactionSummary.todayTransactionsTrend == null ? undefined : {
+      value: transactionSummary.todayTransactionsTrend,
+      isPositive: transactionSummary.todayTransactionsTrend >= 0,
+    },
   };
-
-  const filteredTransactions = useMemo(() => {
-    const now = new Date();
-    const today = startOfDay(now);
-
-    return transactions.filter((transaction) => {
-      const matchesBank =
-        bankFilter === "all" || transaction.bank === bankFilter;
-      const matchesAccount =
-        accountFilter === "all" || transaction.accountName === accountFilter;
-      const matchesSearch =
-        searchQuery === "" ||
-        transaction.senderName
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase());
-      const matchesSender =
-        senderFilter.trim() === "" ||
-        transaction.senderName
-          .toLowerCase()
-          .includes(senderFilter.trim().toLowerCase());
-      const parsedAmount = Number(amountFilter);
-      const matchesAmount =
-        amountFilter.trim() === "" ||
-        (Number.isFinite(parsedAmount) && transaction.amount === parsedAmount);
-      const matchesRemesero =
-        remeseroFilter === "all"
-          ? true
-          : remeseroFilter === "unassigned"
-            ? !transaction.assignedRemeseroNombre
-            : transaction.assignedRemeseroNombre === remeseroFilter;
-
-      // Date filtering
-      let matchesDate = true;
-      const transactionDate = new Date(transaction.createdAt);
-
-      if (dateFilter === "today") {
-        matchesDate = isWithinInterval(transactionDate, {
-          start: today,
-          end: endOfDay(now),
-        });
-      } else if (dateFilter === "yesterday") {
-        const yesterday = subDays(today, 1);
-        matchesDate = isWithinInterval(transactionDate, {
-          start: yesterday,
-          end: endOfDay(yesterday),
-        });
-      } else if (dateFilter === "week") {
-        matchesDate = isWithinInterval(transactionDate, {
-          start: subWeeks(today, 1),
-          end: endOfDay(now),
-        });
-      } else if (dateFilter === "month") {
-        matchesDate = isWithinInterval(transactionDate, {
-          start: subMonths(today, 1),
-          end: endOfDay(now),
-        });
-      } else if (dateFilter === "custom" && customDateRange.from) {
-        const start = startOfDay(customDateRange.from);
-        const end = customDateRange.to
-          ? endOfDay(customDateRange.to)
-          : endOfDay(now);
-        matchesDate = isWithinInterval(transactionDate, { start, end });
-      }
-
-      return (
-        matchesBank &&
-        matchesAccount &&
-        matchesSearch &&
-        matchesSender &&
-        matchesAmount &&
-        matchesRemesero &&
-        matchesDate
-      );
-    });
-  }, [
-    bankFilter,
-    accountFilter,
-    searchQuery,
-    senderFilter,
-    amountFilter,
-    remeseroFilter,
-    dateFilter,
-    customDateRange,
-    transactions,
-  ]);
-
-  const baseFilteredTransactions = useMemo(() => {
-    return transactions.filter((transaction) => {
-      const matchesBank =
-        bankFilter === "all" || transaction.bank === bankFilter;
-      const matchesAccount =
-        accountFilter === "all" || transaction.accountName === accountFilter;
-      const matchesSearch =
-        searchQuery === "" ||
-        transaction.senderName
-          .toLowerCase()
-          .includes(searchQuery.toLowerCase());
-      const matchesSender =
-        senderFilter.trim() === "" ||
-        transaction.senderName
-          .toLowerCase()
-          .includes(senderFilter.trim().toLowerCase());
-      const parsedAmount = Number(amountFilter);
-      const matchesAmount =
-        amountFilter.trim() === "" ||
-        (Number.isFinite(parsedAmount) && transaction.amount === parsedAmount);
-      const matchesRemesero =
-        remeseroFilter === "all"
-          ? true
-          : remeseroFilter === "unassigned"
-            ? !transaction.assignedRemeseroNombre
-            : transaction.assignedRemeseroNombre === remeseroFilter;
-
-      return (
-        matchesBank &&
-        matchesAccount &&
-        matchesSearch &&
-        matchesSender &&
-        matchesAmount &&
-        matchesRemesero
-      );
-    });
-  }, [
-    bankFilter,
-    accountFilter,
-    searchQuery,
-    senderFilter,
-    amountFilter,
-    remeseroFilter,
-    transactions,
-  ]);
-
-  const toTrend = (current: number, previous: number) => {
-    if (!Number.isFinite(current) || !Number.isFinite(previous))
-      return undefined;
-    if (previous === 0) return undefined;
-    const change = ((current - previous) / previous) * 100;
-    const rounded = Math.round(change * 10) / 10;
-    const value = Object.is(rounded, -0) ? 0 : rounded;
-    return { value, isPositive: value >= 0 };
-  };
-
-  // Calculate dynamic stats based on filtered transactions
-  const stats = useMemo(() => {
-    const totalAmount = filteredTransactions.reduce(
-      (acc, t) => acc + t.amount,
-      0,
-    );
-    const avgTransaction =
-      filteredTransactions.length > 0
-        ? totalAmount / filteredTransactions.length
-        : 0;
-
-    const now = new Date();
-    const todayStart = startOfDay(now);
-    const todayEnd = endOfDay(now);
-    const yesterdayStart = subDays(todayStart, 1);
-    const yesterdayEnd = endOfDay(yesterdayStart);
-
-    const todayTx = baseFilteredTransactions.filter((t) =>
-      isWithinInterval(new Date(t.createdAt), {
-        start: todayStart,
-        end: todayEnd,
-      }),
-    );
-    const yesterdayTx = baseFilteredTransactions.filter((t) =>
-      isWithinInterval(new Date(t.createdAt), {
-        start: yesterdayStart,
-        end: yesterdayEnd,
-      }),
-    );
-
-    const todayAmount = todayTx.reduce((acc, t) => acc + t.amount, 0);
-    const yesterdayAmount = yesterdayTx.reduce((acc, t) => acc + t.amount, 0);
-
-    return {
-      totalTransactions: filteredTransactions.length,
-      totalAmount,
-      avgTransaction,
-      totalAmountTrend: toTrend(todayAmount, yesterdayAmount),
-      todayTransactions: todayTx.length,
-      todayTransactionsTrend: toTrend(todayTx.length, yesterdayTx.length),
-    };
-  }, [filteredTransactions, baseFilteredTransactions]);
-
-  const bankTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    filteredTransactions.forEach((t) =>
-      totals.set(t.bank, (totals.get(t.bank) ?? 0) + t.amount),
-    );
-    return Array.from(totals.entries())
-      .map(([bank, totalAmount]) => ({ bank, totalAmount }))
-      .sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [filteredTransactions]);
+  const bankTotals = transactionSummary.bankTotals;
 
   return (
     <div className="min-h-screen bg-background">
@@ -765,9 +690,12 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
 
                 <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
                   <div className="lg:col-span-2">
-                    <TransactionsChart transactions={filteredTransactions} />
+                    <TransactionsChart points={transactionSummary.chartPoints} />
                   </div>
-                  <BankDistributionChart transactions={filteredTransactions} />
+                  <BankDistributionChart
+                    bankDistribution={transactionSummary.bankDistribution}
+                    accountDistribution={transactionSummary.accountDistribution}
+                  />
                 </div>
 
                 <div>
@@ -807,7 +735,7 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
                       Transacciones
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      {filteredTransactions.length} de {transactions.length}{" "}
+                      {filteredTransactions.length} de {transactionSummary.totalTransactions}{" "}
                       transacciones
                     </p>
                   </div>
@@ -863,6 +791,13 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
                       </p>
                     </div>
                   )}
+                  {transactionPageInfo.hasMore && (
+                    <div className="flex justify-center pt-2">
+                      <Button variant="outline" disabled={isLoadingTransactions} onClick={() => void refreshTransactions({ append: true, cursor: transactionPageInfo.nextCursor })}>
+                        {isLoadingTransactions ? "Cargando..." : "Cargar más"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -871,6 +806,7 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
               <AccountsView
                 accounts={accounts}
                 movementsByAccount={movementsByAccount}
+                movementPagesByAccount={movementPagesByAccount}
                 loadingAccounts={isLoadingAccounts}
                 loadingMovementsByAccount={loadingMovementsByAccount}
                 onRefreshAccounts={refreshAccounts}
@@ -884,6 +820,7 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
               <RemeserosView
                 remeseros={remeseros}
                 paymentsByRemesero={paymentsByRemesero}
+                paymentPagesByRemesero={paymentPagesByRemesero}
                 loadingRemeseros={isLoadingRemeseros}
                 loadingPaymentsByRemesero={loadingPaymentsByRemesero}
                 onRefreshRemeseros={refreshRemeseros}
@@ -904,14 +841,16 @@ export function Dashboard({ initialTransactions }: DashboardProps) {
 
       <BottomNav activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <CreateTransactionDialog
-        open={createDialogOpen}
-        onOpenChange={handleCreateDialogOpenChange}
-        banks={manualBanks}
-        gmailAccounts={manualGmailAccounts}
-        remeseros={remeseros}
-        onCreated={handleManualTransactionCreated}
-      />
+      {createDialogOpen && (
+        <CreateTransactionDialog
+          open={createDialogOpen}
+          onOpenChange={handleCreateDialogOpenChange}
+          banks={manualBanks}
+          gmailAccounts={manualGmailAccounts}
+          remeseros={remeseros}
+          onCreated={handleManualTransactionCreated}
+        />
+      )}
     </div>
   );
 }

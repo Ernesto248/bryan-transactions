@@ -1,7 +1,28 @@
 "use server";
 
 import { getPool } from "@/lib/db";
-import { Transaction } from "@/lib/types";
+import { Transaction, TransactionFeed } from "@/lib/types";
+import { loadTransactionFeed } from "@/lib/transaction-feed";
+import { TRANSACTION_TIME_ZONE } from "@/lib/date-time";
+
+function startOfZonedDay(daysAgo: number) {
+  const source = new Date(Date.now() - daysAgo * 86_400_000);
+  const formatter = new Intl.DateTimeFormat("en-US", { timeZone: TRANSACTION_TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  const values = Object.fromEntries(formatter.formatToParts(source).map((part) => [part.type, part.value]));
+  const localMidnightAsUtc = Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day));
+  const probeValues = Object.fromEntries(formatter.formatToParts(new Date(localMidnightAsUtc)).map((part) => [part.type, part.value]));
+  const representedProbe = Date.UTC(Number(probeValues.year), Number(probeValues.month) - 1, Number(probeValues.day), Number(probeValues.hour), Number(probeValues.minute), Number(probeValues.second));
+  return new Date(localMidnightAsUtc - (representedProbe - localMidnightAsUtc));
+}
+
+export async function getInitialTransactionFeed(): Promise<TransactionFeed> {
+  const client = await getPool().connect();
+  try {
+    return await loadTransactionFeed(client, { limit: 30, from: startOfZonedDay(7).toISOString() });
+  } finally {
+    client.release();
+  }
+}
 
 export async function getTransactions(): Promise<Transaction[]> {
   const client = await getPool().connect();

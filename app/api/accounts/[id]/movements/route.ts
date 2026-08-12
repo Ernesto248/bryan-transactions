@@ -1,3 +1,4 @@
+
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import type { AccountMovement } from "@/lib/types";
@@ -58,7 +59,6 @@ function mapMovementRow(row: any): AccountMovement {
       : null,
   };
 }
-
 type Params = {
   params: Promise<{ id: string }>;
 };
@@ -68,6 +68,16 @@ function parseDateParam(value: string | null) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return null;
   return parsed.toISOString();
+}
+function decodeCursor(value: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = z.object({ createdAt: z.string().datetime(), id: z.string().uuid() })
+      .parse(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
+    return parsed;
+  } catch {
+    return undefined;
+  }
 }
 
 export async function GET(request: Request, { params }: Params) {
@@ -83,6 +93,14 @@ export async function GET(request: Request, { params }: Params) {
   }
 
   const url = new URL(request.url);
+  const paginated = url.searchParams.get("view") === "page";
+  const parsedLimit = z.coerce.number().int().min(1).max(100).safeParse(
+    url.searchParams.get("limit") ?? 20,
+  );
+  const cursor = decodeCursor(url.searchParams.get("cursor"));
+  if ((paginated && !parsedLimit.success) || cursor === undefined) {
+    return Response.json({ ok: false, error: "validation_error" }, { status: 400 });
+  }
   const fromParam = parseDateParam(url.searchParams.get("from"));
   const toParam = parseDateParam(url.searchParams.get("to"));
 
@@ -105,6 +123,11 @@ export async function GET(request: Request, { params }: Params) {
   if (toParam) {
     values.push(toParam);
     rangeFilters.push(`m.created_at <= $${values.length}`);
+  }
+
+  if (paginated && cursor) {
+    values.push(cursor.createdAt, cursor.id);
+    rangeFilters.push(`(m.created_at, m.id) < ($${values.length - 1}::timestamptz, $${values.length}::uuid)`);
   }
 
   const rangeWhere =
@@ -147,12 +170,31 @@ export async function GET(request: Request, { params }: Params) {
       LEFT JOIN finance_counterparties counterparty ON counterparty.id = m.counterparty_id
       WHERE m.gmail_account_id = $1
       ${rangeWhere}
-      ORDER BY m.created_at DESC
+      ORDER BY m.created_at DESC, m.id DESC
+      ${paginated ? `LIMIT ${Number(parsedLimit.success ? parsedLimit.data : 20) + 1}` : ""}
       `,
       values,
     );
 
-    const movements: AccountMovement[] = result.rows.map(mapMovementRow);
+    const limit = parsedLimit.success ? parsedLimit.data : 20;
+    const hasMore = paginated && result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const movements: AccountMovement[] = rows.map(mapMovementRow);
+
+    if (paginated) {
+      const last = rows.at(-1);
+      const nextCursor = hasMore && last
+        ? Buffer.from(JSON.stringify({
+            createdAt: new Date(last.createdAt).toISOString(),
+            id: String(last.id),
+          })).toString("base64url")
+        : null;
+      return Response.json({
+        ok: true,
+        movements,
+        pageInfo: { hasMore, nextCursor },
+      }, { status: 200 });
+    }
 
     return Response.json({ ok: true, movements }, { status: 200 });
   } finally {

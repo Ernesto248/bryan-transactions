@@ -1,9 +1,9 @@
 import { Dashboard } from "@/components/dashboard/dashboard"
-import { getTransactions } from "@/app/actions/get-transactions"
+import { getInitialTransactionFeed } from "@/app/actions/get-transactions"
 
 export const dynamic = "force-dynamic"
 
 export default async function HomePage() {
-  const transactions = await getTransactions()
-  return <Dashboard initialTransactions={transactions} />
+  const feed = await getInitialTransactionFeed()
+  return <Dashboard initialTransactions={feed.transactions} initialFeed={feed} />
 }

@@ -1,50 +1,41 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import type { Transaction } from "@/lib/types"
+import type { TransactionFeedDistribution } from "@/lib/types"
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from "recharts"
 import { Building2, Mail } from "lucide-react"
 
 type ViewMode = "bank" | "account"
 
 interface BankDistributionChartProps {
-  transactions: Transaction[]
+  bankDistribution: TransactionFeedDistribution[]
+  accountDistribution: TransactionFeedDistribution[]
 }
-
-export function BankDistributionChart({ transactions }: BankDistributionChartProps) {
+export function BankDistributionChart({ bankDistribution, accountDistribution }: BankDistributionChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("bank")
 
   const bankData = useMemo(() => {
-    const totals = new Map<string, number>()
-    transactions.forEach((t) => totals.set(t.bank, (totals.get(t.bank) ?? 0) + t.amount))
     const colors = ["hsl(38, 92%, 50%)", "hsl(199, 89%, 48%)", "hsl(142, 71%, 45%)", "hsl(270, 70%, 60%)"]
 
-    return Array.from(totals.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([name, value], index) => ({
-        name,
-        value,
+    return bankDistribution.map((item, index) => ({
+        name: item.name,
+        value: item.value,
         color: colors[index % colors.length],
       }))
-  }, [transactions])
+  }, [bankDistribution])
 
   const accountData = useMemo(() => {
-    const totals = new Map<string, number>()
-    transactions.forEach((t) => totals.set(t.accountName, (totals.get(t.accountName) ?? 0) + t.amount))
     const colors = ["hsl(142, 71%, 45%)", "hsl(270, 70%, 60%)", "hsl(340, 75%, 55%)", "hsl(38, 92%, 50%)"]
 
-    return Array.from(totals.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 4)
-      .map(([name, value], index) => ({
-        name,
-        value,
+    return accountDistribution.map((item, index) => ({
+        name: item.name,
+        value: item.value,
         color: colors[index % colors.length],
       }))
-  }, [transactions])
+  }, [accountDistribution])
 
   const data = viewMode === "bank" ? bankData : accountData
 

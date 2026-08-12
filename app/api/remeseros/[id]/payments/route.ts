@@ -1,3 +1,4 @@
+
 import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { appendCashMovement, reverseCashMovement } from "@/lib/finance-ledger";
@@ -22,7 +23,6 @@ const RevertPaymentSchema = z.object({
 function idFromParams(params: { id?: string }) {
   return String(params.id ?? "").trim();
 }
-
 function mapPaymentRow(row: any): RemeseroPayment {
   return {
     id: String(row.id),
@@ -51,9 +51,18 @@ function mapPaymentRow(row: any): RemeseroPayment {
     cashCupAfter: row.cashCupAfter == null ? null : Number(row.cashCupAfter),
   };
 }
+function decodeCursor(value: string | null) {
+  if (!value) return null;
+  try {
+    return z.object({ paidAt: z.string().datetime(), id: z.string().uuid() })
+      .parse(JSON.parse(Buffer.from(value, "base64url").toString("utf8")));
+  } catch {
+    return undefined;
+  }
+}
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const resolvedParams = await params;
@@ -61,6 +70,16 @@ export async function GET(
 
   if (!id) {
     return Response.json({ ok: false, error: "invalid_id" }, { status: 400 });
+  }
+
+  const url = new URL(request.url);
+  const paginated = url.searchParams.get("view") === "page";
+  const parsedLimit = z.coerce.number().int().min(1).max(100).safeParse(
+    url.searchParams.get("limit") ?? 20,
+  );
+  const cursor = decodeCursor(url.searchParams.get("cursor"));
+  if ((paginated && !parsedLimit.success) || cursor === undefined) {
+    return Response.json({ ok: false, error: "validation_error" }, { status: 400 });
   }
 
   const client = await getPool().connect();
@@ -77,13 +96,19 @@ export async function GET(
     );
 
     if (!remesero.rows[0]?.id) {
-      await client.query("ROLLBACK");
       return Response.json(
         { ok: false, error: "remesero_not_found" },
         { status: 404 },
       );
     }
 
+    const values: unknown[] = [id];
+    let cursorWhere = "";
+    if (paginated && cursor) {
+      values.push(cursor.paidAt, cursor.id);
+      cursorWhere = "AND (payment.paid_at, payment.id) < ($2::timestamptz, $3::uuid)";
+    }
+    const limit = parsedLimit.success ? parsedLimit.data : 20;
     const result = await client.query(
       `
       SELECT
@@ -102,12 +127,26 @@ export async function GET(
       FROM remesero_payments payment
       LEFT JOIN finance_cash_movements cash ON cash.id = payment.cash_movement_id
       WHERE payment.remesero_id = $1
-      ORDER BY payment.paid_at DESC
+      ${cursorWhere}
+      ORDER BY payment.paid_at DESC, payment.id DESC
+      ${paginated ? `LIMIT ${limit + 1}` : ""}
       `,
-      [id],
+      values,
     );
 
-    const payments: RemeseroPayment[] = result.rows.map(mapPaymentRow);
+    const hasMore = paginated && result.rows.length > limit;
+    const rows = hasMore ? result.rows.slice(0, limit) : result.rows;
+    const payments: RemeseroPayment[] = rows.map(mapPaymentRow);
+    if (paginated) {
+      const last = rows.at(-1);
+      const nextCursor = hasMore && last
+        ? Buffer.from(JSON.stringify({
+            paidAt: new Date(last.paidAt).toISOString(),
+            id: String(last.id),
+          })).toString("base64url")
+        : null;
+      return Response.json({ ok: true, payments, pageInfo: { hasMore, nextCursor } }, { status: 200 });
+    }
     return Response.json({ ok: true, payments }, { status: 200 });
   } finally {
     client.release();

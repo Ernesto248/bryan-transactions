@@ -1,9 +1,10 @@
+
 "use client"
 
 import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import type { Transaction } from "@/lib/types"
+import type { TransactionFeedChartPoint } from "@/lib/types"
 import {
   AreaChart,
   Area,
@@ -21,9 +22,8 @@ import { es } from "date-fns/locale"
 type ViewMode = "bank" | "account"
 
 interface TransactionsChartProps {
-  transactions: Transaction[]
+  points: TransactionFeedChartPoint[]
 }
-
 const SERIES_COLORS = [
   "hsl(38, 92%, 50%)",
   "hsl(199, 89%, 48%)",
@@ -32,7 +32,7 @@ const SERIES_COLORS = [
   "hsl(340, 75%, 55%)",
 ]
 
-export function TransactionsChart({ transactions }: TransactionsChartProps) {
+export function TransactionsChart({ points }: TransactionsChartProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("bank")
 
   const endDate = useMemo(() => new Date(), [])
@@ -41,27 +41,27 @@ export function TransactionsChart({ transactions }: TransactionsChartProps) {
 
   const bankSeries = useMemo(() => {
     const totals = new Map<string, number>()
-    transactions.forEach((t) => totals.set(t.bank, (totals.get(t.bank) ?? 0) + t.amount))
+    points.forEach((point) => totals.set(point.bank, (totals.get(point.bank) ?? 0) + point.amount))
     return Array.from(totals.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 4)
       .map(([bank]) => bank)
-  }, [transactions])
+  }, [points])
 
   const accountSeries = useMemo(() => {
     const totals = new Map<string, number>()
-    transactions.forEach((t) => totals.set(t.accountName, (totals.get(t.accountName) ?? 0) + t.amount))
+    points.forEach((point) => totals.set(point.accountName, (totals.get(point.accountName) ?? 0) + point.amount))
     return Array.from(totals.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 3)
       .map(([accountName]) => accountName)
-  }, [transactions])
+  }, [points])
 
   const chartDataByBank = useMemo(() => {
     return days.map((day) => {
       const dayStart = startOfDay(day)
-      const dayTransactions = transactions.filter((t) => {
-        const txDate = startOfDay(parseISO(t.createdAt))
+      const dayTransactions = points.filter((point) => {
+        const txDate = startOfDay(parseISO(point.date))
         return txDate.getTime() === dayStart.getTime()
       })
 
@@ -70,18 +70,18 @@ export function TransactionsChart({ transactions }: TransactionsChartProps) {
       }
 
       bankSeries.forEach((bank) => {
-        base[bank] = dayTransactions.filter((t) => t.bank === bank).reduce((sum, t) => sum + t.amount, 0)
+        base[bank] = dayTransactions.filter((point) => point.bank === bank).reduce((sum, point) => sum + point.amount, 0)
       })
 
       return base
     })
-  }, [transactions, days, bankSeries])
+  }, [points, days, bankSeries])
 
   const chartDataByAccount = useMemo(() => {
     return days.map((day) => {
       const dayStart = startOfDay(day)
-      const dayTransactions = transactions.filter((t) => {
-        const txDate = startOfDay(parseISO(t.createdAt))
+      const dayTransactions = points.filter((point) => {
+        const txDate = startOfDay(parseISO(point.date))
         return txDate.getTime() === dayStart.getTime()
       })
 
@@ -90,12 +90,12 @@ export function TransactionsChart({ transactions }: TransactionsChartProps) {
       }
 
       accountSeries.forEach((account) => {
-        base[account] = dayTransactions.filter((t) => t.accountName === account).reduce((sum, t) => sum + t.amount, 0)
+        base[account] = dayTransactions.filter((point) => point.accountName === account).reduce((sum, point) => sum + point.amount, 0)
       })
 
       return base
     })
-  }, [transactions, days, accountSeries])
+  }, [points, days, accountSeries])
 
   const chartData = viewMode === "bank" ? chartDataByBank : chartDataByAccount
   const series = viewMode === "bank" ? bankSeries : accountSeries

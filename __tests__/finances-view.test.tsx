@@ -74,7 +74,7 @@ describe("FinancesView", () => {
     expect(screen.getByText("Zelle USD")).toBeTruthy();
     expect(screen.getByText("Deuda con remeseros")).toBeTruthy();
     expect(screen.getByText("Externas por pagar")).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledWith("/api/finances", { cache: "no-store" });
+    expect(fetchMock).toHaveBeenCalledWith("/api/finances?view=summary", { cache: "no-store" });
   });
 
   it("sends editable balances and rate through the audited settings endpoint", async () => {
@@ -181,6 +181,7 @@ describe("FinancesView", () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, overview: counterpartyOverview }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, movements: [] }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ ok: true, overview }) });
     vi.stubGlobal("fetch", fetchMock);
@@ -193,8 +194,8 @@ describe("FinancesView", () => {
     expect(screen.getByText(/todo su historial manual/i)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Eliminar definitivamente" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(fetchMock.mock.calls[1]).toEqual([
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[2]).toEqual([
       "/api/finances/counterparties/c-1",
       { method: "DELETE" },
     ]);
