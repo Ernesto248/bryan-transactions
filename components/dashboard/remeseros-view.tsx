@@ -24,6 +24,10 @@ import {
   Plus,
 } from "lucide-react";
 import { CreateRemeseroPaymentDialog } from "./create-remesero-payment-dialog";
+import {
+  formatFinanceNumberInput,
+  parseFinanceNumberInput,
+} from "@/lib/finances";
 import { cn } from "@/lib/utils";
 import type {
   Remesero,
@@ -365,7 +369,7 @@ export function RemeserosView({
 
   const handleOpenDebtEdit = (remesero: Remesero) => {
     setDebtEditingRemesero(remesero);
-    setDebtDraft(String(Math.abs(remesero.deudaActual)));
+    setDebtDraft(formatFinanceNumberInput(Math.abs(remesero.deudaActual)));
     setDebtBalanceKind(remesero.deudaActual < 0 ? "fondo" : "deuda");
     setDebtEditError(null);
   };
@@ -426,7 +430,7 @@ export function RemeserosView({
       return;
     }
 
-    const amount = Number(debtDraft);
+    const amount = parseFinanceNumberInput(debtDraft);
     if (!Number.isFinite(amount) || amount < 0) {
       setDebtEditError("Ingresa un monto valido igual o mayor que 0.");
       return;
@@ -456,7 +460,7 @@ export function RemeserosView({
   };
 
   const debtDraftIsZero =
-    debtDraft.trim() !== "" && Number(debtDraft) === 0;
+    debtDraft.trim() !== "" && parseFinanceNumberInput(debtDraft) === 0;
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -1078,14 +1082,17 @@ export function RemeserosView({
               <Label htmlFor="editar-deuda-actual">Monto</Label>
               <Input
                 id="editar-deuda-actual"
-                type="number"
-                min="0"
-                step="0.01"
+                inputMode="decimal"
                 value={debtDraft}
                 onChange={(event) => {
-                  const nextValue = event.target.value;
+                  const nextValue = formatFinanceNumberInput(
+                    event.target.value,
+                  );
                   setDebtDraft(nextValue);
-                  if (nextValue.trim() !== "" && Number(nextValue) === 0) {
+                  if (
+                    nextValue.trim() !== "" &&
+                    parseFinanceNumberInput(nextValue) === 0
+                  ) {
                     setDebtBalanceKind("deuda");
                   }
                   setDebtEditError(null);

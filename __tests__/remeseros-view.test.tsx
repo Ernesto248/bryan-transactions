@@ -47,7 +47,7 @@ describe("RemeserosView debt editor", () => {
     renderView(remesero, onUpdateRemesero);
 
     const debtInput = screen.getByLabelText("Monto");
-    expect((debtInput as HTMLInputElement).value).toBe("2500");
+    expect((debtInput as HTMLInputElement).value).toBe("2,500");
     expect(
       screen.getByRole("radio", { name: "Deuda" }).getAttribute("aria-checked"),
     ).toBe("true");
@@ -59,6 +59,25 @@ describe("RemeserosView debt editor", () => {
     await waitFor(() => {
       expect(onUpdateRemesero).toHaveBeenCalledWith("r-1", {
         deudaActual: -750.25,
+        deudaActualNote: "Ajuste manual desde la interfaz",
+      });
+    });
+  });
+
+  it("formats thousands and millions while preserving the numeric debt", async () => {
+    const onUpdateRemesero = vi.fn().mockResolvedValue(true);
+    renderView(remesero, onUpdateRemesero);
+
+    const debtInput = screen.getByLabelText("Monto");
+    fireEvent.change(debtInput, { target: { value: "1000000.25" } });
+
+    expect((debtInput as HTMLInputElement).value).toBe("1,000,000.25");
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar deuda" }));
+
+    await waitFor(() => {
+      expect(onUpdateRemesero).toHaveBeenCalledWith("r-1", {
+        deudaActual: 1000000.25,
         deudaActualNote: "Ajuste manual desde la interfaz",
       });
     });
