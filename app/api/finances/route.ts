@@ -46,6 +46,56 @@ export async function GET(request?: Request) {
                    COALESCE(-SUM(deuda_actual), 0) as "netCup"
             FROM remeseros WHERE deleted_at IS NULL
           ) remesero_row) AS remeseros,
+          (SELECT row_to_json(profit_row) FROM (
+            SELECT
+              COALESCE(SUM(wire_profit_cup) FILTER (WHERE wire_profit_status IN ('EXACT', 'ESTIMATED')), 0) as "lifetimeProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (WHERE wire_profit_status IN ('EXACT', 'ESTIMATED')), 0) as "lifetimeProfitUsd",
+              COALESCE(SUM(wire_profit_cup) FILTER (WHERE wire_profit_status = 'EXACT'), 0) as "lifetimeExactProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (WHERE wire_profit_status = 'EXACT'), 0) as "lifetimeExactProfitUsd",
+              COALESCE(SUM(wire_profit_cup) FILTER (WHERE wire_profit_status = 'ESTIMATED'), 0) as "lifetimeEstimatedProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (WHERE wire_profit_status = 'ESTIMATED'), 0) as "lifetimeEstimatedProfitUsd",
+              COUNT(*) FILTER (WHERE wire_profit_status = 'EXACT') as "lifetimeExactCount",
+              COUNT(*) FILTER (WHERE wire_profit_status = 'ESTIMATED') as "lifetimeEstimatedCount",
+              COUNT(*) FILTER (WHERE wire_profit_status = 'UNAVAILABLE') as "lifetimePendingCount",
+              COALESCE(SUM(wire_profit_cup) FILTER (
+                WHERE wire_profit_status IN ('EXACT', 'ESTIMATED')
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (
+                WHERE wire_profit_status IN ('EXACT', 'ESTIMATED')
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthProfitUsd",
+              COALESCE(SUM(wire_profit_cup) FILTER (
+                WHERE wire_profit_status = 'EXACT'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthExactProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (
+                WHERE wire_profit_status = 'EXACT'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthExactProfitUsd",
+              COALESCE(SUM(wire_profit_cup) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthEstimatedProfitCup",
+              COALESCE(SUM(wire_profit_usd) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthEstimatedProfitUsd",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'EXACT'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthExactCount",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthEstimatedCount",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'UNAVAILABLE'
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthPendingCount"
+            FROM account_outflow_movements
+            WHERE reverted_at IS NULL
+          ) profit_row) AS wire_profits,
           (SELECT COALESCE(json_agg(row_to_json(change_row)), '[]') FROM (
             SELECT id, field_name as "fieldName", previous_value as "previousValue",
                    new_value as "newValue", note, changed_at as "changedAt"
@@ -114,6 +164,18 @@ export async function GET(request?: Request) {
     const expensesResult = { rows: Array.isArray(core.expenses) ? core.expenses : [] };
     const cashMovementsResult = { rows: Array.isArray(core.cash_movements) ? core.cash_movements : [] };
     const exchangesResult = { rows: Array.isArray(core.exchanges) ? core.exchanges : [] };
+    const profitRow = core.wire_profits ?? {};
+    const mapProfitPeriod = (prefix: "lifetime" | "month") => ({
+      profitCup: toNumber(profitRow[`${prefix}ProfitCup`]),
+      profitUsd: toNumber(profitRow[`${prefix}ProfitUsd`]),
+      exactProfitCup: toNumber(profitRow[`${prefix}ExactProfitCup`]),
+      exactProfitUsd: toNumber(profitRow[`${prefix}ExactProfitUsd`]),
+      estimatedProfitCup: toNumber(profitRow[`${prefix}EstimatedProfitCup`]),
+      estimatedProfitUsd: toNumber(profitRow[`${prefix}EstimatedProfitUsd`]),
+      exactCount: toNumber(profitRow[`${prefix}ExactCount`]),
+      estimatedCount: toNumber(profitRow[`${prefix}EstimatedCount`]),
+      pendingCount: toNumber(profitRow[`${prefix}PendingCount`]),
+    });
 
     const state = stateResult.rows[0] ?? {};
     const settings = {
@@ -259,6 +321,10 @@ export async function GET(request?: Request) {
           externalNetUsd,
           externalNetCup,
         }),
+        wireProfits: {
+          lifetime: mapProfitPeriod("lifetime"),
+          currentMonth: mapProfitPeriod("month"),
+        },
       },
     };
 

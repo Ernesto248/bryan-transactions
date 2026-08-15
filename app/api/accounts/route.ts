@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getPool } from "@/lib/db";
 import { ACTIVE_DEBT_DELTA_SQL, roundMoney } from "@/lib/finance-ledger";
 import type { AccountBalance, WireFifoSnapshot } from "@/lib/types";
+import { calculateWireProfit, calculateWireSettlementAmount } from "@/lib/wire-profit";
 import { loadZelleInventories, previewWire } from "@/lib/zelle-inventory";
 
 export const runtime = "nodejs";
@@ -32,6 +33,7 @@ const CreateAccountMovementSchema = MovementBaseSchema.extend({
   settlementCurrency: z.enum(["USD", "CUP"]).optional(),
   conversionRate: z.number().finite().positive().optional(),
   feePercent: z.number().finite().min(0).optional(),
+  wireFeeUsd: z.number().finite().min(0).default(0).transform(roundMoney),
 }).superRefine((value, context) => {
   if (value.movementType !== "wire") return;
   if (!value.counterpartyId) {
@@ -135,7 +137,7 @@ export async function GET(request: Request) {
       LEFT JOIN (
         SELECT
           gmail_account_id,
-          SUM(amount) as total_outgoing
+          SUM(amount + COALESCE(wire_fee_usd, 0)) as total_outgoing
         FROM account_outflow_movements
         WHERE reverted_at IS NULL
         ${movementWhere}
@@ -179,6 +181,10 @@ export async function POST(request: Request) {
     let debtAmount: number | null = null;
     let financeDebtMovementId: string | null = null;
     let fifoValuation: WireFifoSnapshot | null = null;
+    const wireFeeUsd = parsed.data.movementType === "wire"
+      ? parsed.data.wireFeeUsd
+      : 0;
+    const totalDebitUsd = roundMoney(parsed.data.amount + wireFeeUsd);
 
     const accountResult = await client.query(
       `SELECT id FROM gmail_accounts WHERE id = $1 FOR UPDATE`,
@@ -196,7 +202,7 @@ export async function POST(request: Request) {
       const inventories = await loadZelleInventories(client, parsed.data.accountId);
       const inventory = inventories[0];
       const valuationPreview = inventory
-        ? previewWire(inventory, parsed.data.amount)
+        ? previewWire(inventory, totalDebitUsd)
         : null;
 
       if (!valuationPreview?.canCreate) {
@@ -216,9 +222,35 @@ export async function POST(request: Request) {
         valuedAt: new Date().toISOString(),
         balanceBeforeUsd: valuationPreview.availableUsd,
         balanceAfterUsd: valuationPreview.remaining.balanceUsd,
+        principalUsd: parsed.data.amount,
+        wireFeeUsd,
+        totalDebitUsd,
+        profit: null,
         selected: valuationPreview.selected,
         remaining: valuationPreview.remaining,
       };
+
+      const financeStateResult = await client.query(
+        `SELECT usd_cup_rate as "usdCupRate"
+         FROM finance_state WHERE id = 1 FOR UPDATE`,
+      );
+      const globalRate = Number(financeStateResult.rows[0]?.usdCupRate ?? 0);
+      if (!Number.isFinite(globalRate) || globalRate <= 0) {
+        await client.query("ROLLBACK");
+        return Response.json(
+          { ok: false, error: "global_rate_required" },
+          { status: 409 },
+        );
+      }
+
+      fifoValuation.profit = calculateWireProfit({
+        principalUsd: parsed.data.amount,
+        settlementCurrency: parsed.data.settlementCurrency!,
+        conversionRate: parsed.data.conversionRate,
+        feePercent: parsed.data.feePercent,
+        globalRate,
+        selected: valuationPreview.selected,
+      });
 
       const counterpartyResult = await client.query(
         `SELECT id FROM finance_counterparties
@@ -230,11 +262,12 @@ export async function POST(request: Request) {
         return Response.json({ ok: false, error: "counterparty_not_found" }, { status: 404 });
       }
 
-      debtAmount = roundMoney(
-        parsed.data.settlementCurrency === "CUP"
-          ? parsed.data.amount * (parsed.data.conversionRate ?? 0)
-          : parsed.data.amount * (1 + (parsed.data.feePercent ?? 0) / 100),
-      );
+      debtAmount = calculateWireSettlementAmount({
+        principalUsd: parsed.data.amount,
+        settlementCurrency: parsed.data.settlementCurrency!,
+        conversionRate: parsed.data.conversionRate,
+        feePercent: parsed.data.feePercent,
+      });
     }
 
     if (parsed.data.movementType === "wire" && debtAmount !== null) {
@@ -274,9 +307,12 @@ export async function POST(request: Request) {
           fifo_priced_usd, fifo_unpriced_usd, fifo_cost_cup,
           fifo_average_price, fifo_remaining_priced_usd,
           fifo_remaining_unpriced_usd, fifo_remaining_cost_cup,
-          fifo_remaining_average_price)
+          fifo_remaining_average_price, wire_fee_usd, wire_profit_status,
+          wire_profit_global_rate, wire_profit_fifo_cost_cup,
+          wire_profit_cup, wire_profit_usd)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-               $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+               $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+               $24, $25, $26, $27, $28, $29)`,
       [
         movementId,
         parsed.data.accountId,
@@ -303,13 +339,27 @@ export async function POST(request: Request) {
         fifoValuation?.remaining.unpricedUsd ?? null,
         fifoValuation?.remaining.costCup ?? null,
         fifoValuation?.remaining.averagePrice ?? null,
+        parsed.data.movementType === "wire" ? wireFeeUsd : null,
+        fifoValuation?.profit?.status ?? null,
+        fifoValuation?.profit?.globalRate ?? null,
+        fifoValuation?.profit?.fifoCostCup ?? null,
+        fifoValuation?.profit?.profitCup ?? null,
+        fifoValuation?.profit?.profitUsd ?? null,
       ],
     );
 
     await client.query("COMMIT");
 
     return Response.json(
-      { ok: true, movementId, financeDebtMovementId, debtAmount, fifoValuation },
+      {
+        ok: true,
+        movementId,
+        financeDebtMovementId,
+        debtAmount,
+        wireFeeUsd: parsed.data.movementType === "wire" ? wireFeeUsd : null,
+        totalDebitUsd: parsed.data.movementType === "wire" ? totalDebitUsd : parsed.data.amount,
+        fifoValuation,
+      },
       { status: 201 },
     );
   } catch (err: any) {

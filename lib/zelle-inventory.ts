@@ -285,7 +285,9 @@ export async function loadZelleInventories(
      LEFT JOIN active_assignments aa ON aa.transaction_id = t.id
      UNION ALL
      SELECT a.id, a.account_name, a.incoming_adjustment, a.outgoing_adjustment,
-            'outflow', m.id::text, m.amount, m.created_at, NULL::numeric
+            'outflow', m.id::text,
+            (m.amount + COALESCE(m.wire_fee_usd, 0)),
+            m.created_at, NULL::numeric
      FROM account_scope a
      JOIN account_outflow_movements m ON m.gmail_account_id = a.id
      WHERE m.reverted_at IS NULL`,

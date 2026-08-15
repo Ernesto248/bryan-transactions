@@ -306,6 +306,7 @@ export function Dashboard({ initialTransactions, initialFeed }: DashboardProps) 
       settlementCurrency?: "USD" | "CUP";
       conversionRate?: number;
       feePercent?: number;
+      wireFeeUsd?: number;
     },
   ) => {
     const res = await fetch(apiUrl("/api/accounts"), {
@@ -320,6 +321,7 @@ export function Dashboard({ initialTransactions, initialFeed }: DashboardProps) 
         settlementCurrency: input.settlementCurrency,
         conversionRate: input.conversionRate,
         feePercent: input.feePercent,
+        wireFeeUsd: input.wireFeeUsd,
       }),
     });
 

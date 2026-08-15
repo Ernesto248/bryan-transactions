@@ -50,6 +50,7 @@ import type {
   FinanceCurrency,
   FinanceMovementType,
   FinanceOverview,
+  WireProfitPeriodSummary,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -76,6 +77,18 @@ const movementDescriptions: Record<FinanceMovementType, string> = {
   PAID: "Reduce lo que debes y descuenta tu efectivo en la misma moneda.",
   SET_RECEIVABLE: "Establece directamente el total que esa persona te debe.",
   SET_PAYABLE: "Establece directamente el total que tú le debes.",
+};
+
+const EMPTY_WIRE_PROFIT_PERIOD: WireProfitPeriodSummary = {
+  profitCup: 0,
+  profitUsd: 0,
+  exactProfitCup: 0,
+  exactProfitUsd: 0,
+  estimatedProfitCup: 0,
+  estimatedProfitUsd: 0,
+  exactCount: 0,
+  estimatedCount: 0,
+  pendingCount: 0,
 };
 
 const movementOptions: FinanceMovementType[] = [
@@ -430,6 +443,10 @@ export function FinancesView() {
   }
 
   const { settings, totals, counterparties, settingChanges, expenses, exchanges } = overview;
+  const wireProfits = totals.wireProfits ?? {
+    lifetime: EMPTY_WIRE_PROFIT_PERIOD,
+    currentMonth: EMPTY_WIRE_PROFIT_PERIOD,
+  };
   const hasRate = settings.usdCupRate !== null;
   const expenseAmountValue = parseFinanceNumberInput(expenseAmount);
   const selectedExpenseBalance = expenseCurrency === "USD" ? settings.cashUsd : settings.cashCup;
@@ -556,6 +573,35 @@ export function FinancesView() {
               </div>
             ))}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 via-card to-card">
+        <CardHeader>
+          <CardTitle>Ganancia de wires</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2">
+          {[
+            { label: "Mes actual", value: wireProfits.currentMonth },
+            { label: "Histórico", value: wireProfits.lifetime },
+          ].map(({ label, value }) => (
+            <div key={label} className="rounded-xl border border-border/70 bg-background/60 p-4">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+              <p className={`mt-2 text-xl font-semibold ${value.profitCup < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                {formatNumber(value.profitCup)} CUP
+              </p>
+              <p className={`text-sm ${value.profitUsd < 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                {formatNumber(value.profitUsd)} USD
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                <p>Exacta: <strong className="text-foreground">{formatNumber(value.exactProfitCup)} CUP · {formatNumber(value.exactProfitUsd)} USD</strong> ({value.exactCount})</p>
+                <p>Estimada: <strong className="text-foreground">{formatNumber(value.estimatedProfitCup)} CUP · {formatNumber(value.estimatedProfitUsd)} USD</strong> ({value.estimatedCount})</p>
+              </div>
+              {value.pendingCount > 0 ? (
+                <p className="mt-2 text-xs text-amber-300">{value.pendingCount} wire(s) sin costo disponible.</p>
+              ) : null}
+            </div>
+          ))}
         </CardContent>
       </Card>
 

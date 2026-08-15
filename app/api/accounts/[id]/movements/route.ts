@@ -12,12 +12,19 @@ function mapMovementRow(row: any): AccountMovement {
   const fifoRemainingUnpricedUsd = Number(row.fifoRemainingUnpricedUsd ?? 0);
   const fifoSelectedUsd = fifoPricedUsd + fifoUnpricedUsd;
   const fifoRemainingUsd = fifoRemainingPricedUsd + fifoRemainingUnpricedUsd;
+  const amount = Number(row.amount ?? 0);
+  const wireFeeUsd = row.wireFeeUsd == null ? 0 : Number(row.wireFeeUsd);
+  const profitStatus = row.wireProfitStatus === "EXACT"
+    || row.wireProfitStatus === "ESTIMATED"
+    || row.wireProfitStatus === "UNAVAILABLE"
+    ? row.wireProfitStatus
+    : null;
 
   return {
     id: String(row.id),
     accountId: String(row.accountId),
     movementType: row.movementType === "expense" ? "expense" : "wire",
-    amount: Number(row.amount ?? 0),
+    amount,
     note: row.note ? String(row.note) : null,
     createdAt: new Date(row.createdAt).toISOString(),
     revertedAt: row.revertedAt ? new Date(row.revertedAt).toISOString() : null,
@@ -27,6 +34,8 @@ function mapMovementRow(row: any): AccountMovement {
     settlementCurrency: row.settlementCurrency === "CUP" ? "CUP" : row.settlementCurrency === "USD" ? "USD" : null,
     conversionRate: row.conversionRate == null ? null : Number(row.conversionRate),
     feePercent: row.feePercent == null ? null : Number(row.feePercent),
+    wireFeeUsd: row.wireFeeUsd == null ? null : wireFeeUsd,
+    totalDebitUsd: row.movementType === "wire" ? amount + wireFeeUsd : amount,
     debtAmount: row.debtAmount == null ? null : Number(row.debtAmount),
     financeDebtMovementId: row.financeDebtMovementId == null ? null : String(row.financeDebtMovementId),
     fifoValuation: row.fifoMethod === "FIFO_PER_ACCOUNT" && row.fifoValuedAt
@@ -35,6 +44,19 @@ function mapMovementRow(row: any): AccountMovement {
           valuedAt: new Date(row.fifoValuedAt).toISOString(),
           balanceBeforeUsd: Number(row.fifoBalanceBeforeUsd ?? 0),
           balanceAfterUsd: Number(row.fifoBalanceAfterUsd ?? 0),
+          principalUsd: amount,
+          wireFeeUsd,
+          totalDebitUsd: amount + wireFeeUsd,
+          profit: profitStatus
+            ? {
+                status: profitStatus,
+                globalRate: Number(row.wireProfitGlobalRate),
+                settlementAmount: Number(row.debtAmount ?? 0),
+                fifoCostCup: row.wireProfitFifoCostCup == null ? null : Number(row.wireProfitFifoCostCup),
+                profitCup: row.wireProfitCup == null ? null : Number(row.wireProfitCup),
+                profitUsd: row.wireProfitUsd == null ? null : Number(row.wireProfitUsd),
+              }
+            : null,
           selected: {
             balanceUsd: fifoSelectedUsd,
             inventoryUsd: fifoSelectedUsd,
@@ -152,6 +174,7 @@ export async function GET(request: Request, { params }: Params) {
         m.settlement_currency as "settlementCurrency",
         m.conversion_rate as "conversionRate",
         m.fee_percent as "feePercent",
+        m.wire_fee_usd as "wireFeeUsd",
         m.debt_amount as "debtAmount",
         m.finance_debt_movement_id as "financeDebtMovementId",
         m.fifo_method as "fifoMethod",
@@ -165,7 +188,12 @@ export async function GET(request: Request, { params }: Params) {
         m.fifo_remaining_priced_usd as "fifoRemainingPricedUsd",
         m.fifo_remaining_unpriced_usd as "fifoRemainingUnpricedUsd",
         m.fifo_remaining_cost_cup as "fifoRemainingCostCup",
-        m.fifo_remaining_average_price as "fifoRemainingAveragePrice"
+        m.fifo_remaining_average_price as "fifoRemainingAveragePrice",
+        m.wire_profit_status as "wireProfitStatus",
+        m.wire_profit_global_rate as "wireProfitGlobalRate",
+        m.wire_profit_fifo_cost_cup as "wireProfitFifoCostCup",
+        m.wire_profit_cup as "wireProfitCup",
+        m.wire_profit_usd as "wireProfitUsd"
       FROM account_outflow_movements m
       LEFT JOIN finance_counterparties counterparty ON counterparty.id = m.counterparty_id
       WHERE m.gmail_account_id = $1

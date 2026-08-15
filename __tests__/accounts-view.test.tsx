@@ -86,9 +86,20 @@ describe("AccountsView", () => {
               accountId: "account-1",
               accountName: "Cuenta principal",
               requestedUsd: 100,
+              principalUsd: 100,
+              wireFeeUsd: 25,
+              totalDebitUsd: 125,
               availableUsd: 874.75,
               canCreate: true,
               error: null,
+              profit: {
+                status: "ESTIMATED",
+                globalRate: 675,
+                settlementAmount: 70000,
+                fifoCostCup: 85000,
+                profitCup: -15000,
+                profitUsd: -22.22,
+              },
               selected: {
                 balanceUsd: 100,
                 inventoryUsd: 100,
@@ -128,5 +139,8 @@ describe("AccountsView", () => {
     expect(await screen.findByText(/se tiraron a un promedio de 680 CUP\/USD/i)).toBeTruthy();
     expect(screen.getByText(/Quedarán 774.75 USD a un promedio de 680 CUP\/USD/i)).toBeTruthy();
     expect(screen.getByText(/hay 10 USD sin precio/i)).toBeTruthy();
+    expect(screen.getByText(/Principal:/i)).toBeTruthy();
+    expect(screen.getByText(/Ganancia estimada/i)).toBeTruthy();
+    expect(screen.getByText(/-15,000 CUP/i)).toBeTruthy();
   });
 });
