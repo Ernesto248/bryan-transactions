@@ -365,6 +365,10 @@ export type FinanceOverviewTotals = {
   zelleValuation: ZelleValuationSummary & {
     accounts: ZelleAccountValuation[];
   };
+  pendingAssignments: {
+    count: number;
+    amountUsd: number;
+  };
   remeseros: {
     receivableCup: number;
     payableCup: number;

@@ -34,6 +34,10 @@ const overview: FinanceOverview = {
         coveragePercent: 80,
       }],
     },
+    pendingAssignments: {
+      count: 2,
+      amountUsd: 50,
+    },
     remeseros: {
       receivableCup: 16000,
       payableCup: 100000,
@@ -49,7 +53,7 @@ const overview: FinanceOverview = {
       netCup: -42000,
       netCupUsd: -100,
     },
-    capitalTotalUsd: 350,
+    capitalTotalUsd: 300,
     wireProfits: {
       lifetime: {
         profitCup: 183000, profitUsd: 271.11,
@@ -94,7 +98,10 @@ describe("FinancesView", () => {
 
     render(<FinancesView />);
 
-    expect(await screen.findByText("$ 350 USD")).toBeTruthy();
+    expect(await screen.findByText("$ 300 USD")).toBeTruthy();
+    expect(screen.getByText("Pendiente de asignar")).toBeTruthy();
+    expect(screen.getByText("- $ 50 USD")).toBeTruthy();
+    expect(screen.getByText("2 transacciones reservadas")).toBeTruthy();
     expect(screen.getByText("Zelle USD")).toBeTruthy();
     expect(screen.getByText("Deuda con remeseros")).toBeTruthy();
     expect(screen.getByText("Externas por pagar")).toBeTruthy();
@@ -112,7 +119,7 @@ describe("FinancesView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<FinancesView />);
 
-    await screen.findByText("$ 350 USD");
+    await screen.findByText("$ 300 USD");
     expect(screen.queryByLabelText("Efectivo USD")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Editar balances" }));
 
@@ -251,7 +258,7 @@ describe("FinancesView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<FinancesView />);
 
-    await screen.findByText("$ 350 USD");
+    await screen.findByText("$ 300 USD");
     fireEvent.click(screen.getByRole("button", { name: "Registrar gasto" }));
     fireEvent.change(await screen.findByLabelText("Moneda"), { target: { value: "CUP" } });
     const amountInput = screen.getByLabelText("Monto") as HTMLInputElement;

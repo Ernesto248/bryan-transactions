@@ -41,6 +41,7 @@ export function calculateCapitalTotal(input: {
   cashCup: number;
   usdCupRate: number | null;
   zelleUsd: number;
+  pendingAssignmentsUsd: number;
   remeserosNetCup: number;
   externalNetUsd: number;
   externalNetCup: number;
@@ -49,7 +50,8 @@ export function calculateCapitalTotal(input: {
 
   return (
     input.cashUsd +
-    input.zelleUsd +
+    input.zelleUsd -
+    input.pendingAssignmentsUsd +
     input.externalNetUsd +
     (input.cashCup + input.remeserosNetCup + input.externalNetCup) /
       input.usdCupRate
@@ -69,6 +71,10 @@ export function emptyFinanceTotals(): FinanceOverviewTotals {
       averagePrice: null,
       coveragePercent: 0,
       accounts: [],
+    },
+    pendingAssignments: {
+      count: 0,
+      amountUsd: 0,
     },
     remeseros: {
       receivableCup: 0,

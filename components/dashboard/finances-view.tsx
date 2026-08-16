@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   Banknote,
   ChevronDown,
+  CircleDollarSign,
   Landmark,
   Plus,
   ReceiptText,
@@ -505,10 +506,13 @@ export function FinancesView() {
           <p className="mt-2 text-sm text-muted-foreground">
             {hasRate ? `Conversion actual: 1 USD = ${formatNumber(settings.usdCupRate ?? 0)} CUP` : "Ingresa la tasa USD/CUP para convertir los valores en CUP."}
           </p>
+          <p className="mt-1 text-xs text-amber-300">
+            Reserva incluida: -$ {formatNumber(totals.pendingAssignments.amountUsd)} USD por {totals.pendingAssignments.count} transaccion{totals.pendingAssignments.count === 1 ? "" : "es"} sin remesero.
+          </p>
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
         {[
           { label: "Efectivo USD", value: `$ ${formatNumber(settings.cashUsd)}`, icon: Banknote },
           { label: "Efectivo CUP", value: `$ ${formatNumber(settings.cashCup)}`, icon: Wallet },
@@ -523,6 +527,18 @@ export function FinancesView() {
             </CardContent>
           </Card>
         ))}
+        <Card className="col-span-2 min-w-0 border-amber-500/30 bg-amber-500/10 xl:col-span-1">
+          <CardContent className="p-4">
+            <CircleDollarSign className="h-4 w-4 text-amber-300" />
+            <p className="mt-3 text-xs uppercase tracking-wide text-amber-200">Pendiente de asignar</p>
+            <p className="mt-1 break-words text-lg font-semibold leading-tight text-amber-100">
+              - $ {formatNumber(totals.pendingAssignments.amountUsd)} USD
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {totals.pendingAssignments.count} transaccion{totals.pendingAssignments.count === 1 ? "" : "es"} reservada{totals.pendingAssignments.count === 1 ? "" : "s"}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card className="overflow-hidden border-sky-500/25 bg-gradient-to-br from-sky-500/10 via-card to-card">
