@@ -507,7 +507,7 @@ export function FinancesView() {
             {hasRate ? `Conversion actual: 1 USD = ${formatNumber(settings.usdCupRate ?? 0)} CUP` : "Ingresa la tasa USD/CUP para convertir los valores en CUP."}
           </p>
           <p className="mt-1 text-xs text-amber-300">
-            Reserva incluida: -$ {formatNumber(totals.pendingAssignments.amountUsd)} USD por {totals.pendingAssignments.count} transaccion{totals.pendingAssignments.count === 1 ? "" : "es"} sin remesero.
+            Reserva incluida: -$ {formatNumber(totals.zelleValuation.unpricedUsd)} USD del Zelle sin precio.
           </p>
         </CardContent>
       </Card>
@@ -530,12 +530,12 @@ export function FinancesView() {
         <Card className="col-span-2 min-w-0 border-amber-500/30 bg-amber-500/10 xl:col-span-1">
           <CardContent className="p-4">
             <CircleDollarSign className="h-4 w-4 text-amber-300" />
-            <p className="mt-3 text-xs uppercase tracking-wide text-amber-200">Pendiente de asignar</p>
+            <p className="mt-3 text-xs uppercase tracking-wide text-amber-200">Reserva de Zelle sin precio</p>
             <p className="mt-1 break-words text-lg font-semibold leading-tight text-amber-100">
-              - $ {formatNumber(totals.pendingAssignments.amountUsd)} USD
+              - $ {formatNumber(totals.zelleValuation.unpricedUsd)} USD
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {totals.pendingAssignments.count} transaccion{totals.pendingAssignments.count === 1 ? "" : "es"} reservada{totals.pendingAssignments.count === 1 ? "" : "s"}
+              Tomado de la valoracion actual del Zelle
             </p>
           </CardContent>
         </Card>

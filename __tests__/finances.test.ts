@@ -13,11 +13,11 @@ describe("finance calculations", () => {
       cashCup: 42000,
       usdCupRate: 420,
       zelleUsd: 500,
-      pendingAssignmentsUsd: 50,
+      unpricedZelleUsd: 100,
       remeserosNetCup: -84000,
       externalNetUsd: -50,
       externalNetCup: -42000,
-    })).toBe(300);
+    })).toBe(250);
   });
 
   it("does not calculate capital without a valid exchange rate", () => {
@@ -26,7 +26,7 @@ describe("finance calculations", () => {
       cashCup: 0,
       usdCupRate: null,
       zelleUsd: 0,
-      pendingAssignmentsUsd: 75,
+      unpricedZelleUsd: 75,
       remeserosNetCup: 0,
       externalNetUsd: 0,
       externalNetCup: 0,
