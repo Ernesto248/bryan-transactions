@@ -89,6 +89,17 @@ const EMPTY_WIRE_PROFIT_PERIOD: WireProfitPeriodSummary = {
   exactCount: 0,
   estimatedCount: 0,
   pendingCount: 0,
+  ownerFeeCup: 0,
+  ownerFeeUsd: 0,
+  netProfitCup: 0,
+  netProfitUsd: 0,
+  netExactProfitCup: 0,
+  netExactProfitUsd: 0,
+  netEstimatedProfitCup: 0,
+  netEstimatedProfitUsd: 0,
+  netExactCount: 0,
+  netEstimatedCount: 0,
+  netPendingCount: 0,
 };
 
 const movementOptions: FinanceMovementType[] = [
@@ -587,19 +598,22 @@ export function FinancesView() {
           ].map(({ label, value }) => (
             <div key={label} className="rounded-xl border border-border/70 bg-background/60 p-4">
               <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-              <p className={`mt-2 text-xl font-semibold ${value.profitCup < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                {formatNumber(value.profitCup)} CUP
+              <p className={`mt-2 text-xl font-semibold ${value.netProfitCup < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                {formatNumber(value.netProfitCup)} CUP
               </p>
-              <p className={`text-sm ${value.profitUsd < 0 ? "text-red-400" : "text-muted-foreground"}`}>
-                {formatNumber(value.profitUsd)} USD
+              <p className={`text-sm ${value.netProfitUsd < 0 ? "text-red-400" : "text-muted-foreground"}`}>
+                {formatNumber(value.netProfitUsd)} USD netos
               </p>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                <p>Exacta: <strong className="text-foreground">{formatNumber(value.exactProfitCup)} CUP · {formatNumber(value.exactProfitUsd)} USD</strong> ({value.exactCount})</p>
-                <p>Estimada: <strong className="text-foreground">{formatNumber(value.estimatedProfitCup)} CUP · {formatNumber(value.estimatedProfitUsd)} USD</strong> ({value.estimatedCount})</p>
+              <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+                <p>Exactos <strong className="block text-foreground">{value.netExactCount}</strong></p>
+                <p>Estimados <strong className="block text-foreground">{value.netEstimatedCount}</strong></p>
+                <p>Pendientes <strong className="block text-foreground">{value.netPendingCount}</strong></p>
               </div>
-              {value.pendingCount > 0 ? (
-                <p className="mt-2 text-xs text-amber-300">{value.pendingCount} wire(s) sin costo disponible.</p>
-              ) : null}
+              <p className="mt-3 text-xs text-muted-foreground">
+                Bruta: {formatNumber(value.profitCup)} CUP · Comisión dueños: {formatNumber(value.ownerFeeCup)} CUP
+                <br />Exacta neta: {formatNumber(value.netExactProfitCup)} CUP / {formatNumber(value.netExactProfitUsd)} USD
+                {" · "}Estimada neta: {formatNumber(value.netEstimatedProfitCup)} CUP / {formatNumber(value.netEstimatedProfitUsd)} USD
+              </p>
             </div>
           ))}
         </CardContent>

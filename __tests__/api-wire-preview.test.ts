@@ -86,6 +86,7 @@ describe("GET /api/accounts/[id]/wire-preview", () => {
           },
         ],
       })
+      .mockResolvedValueOnce({ rows: [{ ownerFeePercent: 2 }] })
       .mockResolvedValueOnce({ rows: [{ usdCupRate: 675 }] });
     const client = { query, release: vi.fn() };
     connectMock.mockResolvedValue(client);
@@ -110,6 +111,10 @@ describe("GET /api/accounts/[id]/wire-preview", () => {
         fifoCostCup: 6817000,
         profitCup: 183000,
         profitUsd: 271.11,
+        ownerFeePercent: 2,
+        ownerFeeCup: 140000,
+        netProfitCup: 43000,
+        netProfitUsd: 63.7,
       },
     });
   });

@@ -11,6 +11,7 @@ type CalculateWireProfitInput = {
   conversionRate?: number;
   feePercent?: number;
   globalRate: number;
+  ownerFeePercent: number;
   selected: ZelleValuationSummary;
 };
 
@@ -19,7 +20,7 @@ export function calculateWireSettlementAmount({
   settlementCurrency,
   conversionRate,
   feePercent,
-}: Omit<CalculateWireProfitInput, "globalRate" | "selected">) {
+}: Omit<CalculateWireProfitInput, "globalRate" | "selected" | "ownerFeePercent">) {
   return roundMoney(
     settlementCurrency === "CUP"
       ? principalUsd * (conversionRate ?? 0)
@@ -32,6 +33,7 @@ export function calculateWireProfit({
   conversionRate,
   feePercent,
   globalRate,
+  ownerFeePercent,
   selected,
 }: CalculateWireProfitInput): WireProfitSnapshot {
   const settlementAmount = calculateWireSettlementAmount({
@@ -40,6 +42,20 @@ export function calculateWireProfit({
     conversionRate,
     feePercent,
   });
+  const ownerFeeAmount = roundMoney(
+    (settlementCurrency === "CUP" ? settlementAmount : principalUsd)
+      * ownerFeePercent / 100,
+  );
+  const ownerFeeCup = roundMoney(
+    settlementCurrency === "CUP"
+      ? ownerFeeAmount
+      : ownerFeeAmount * globalRate,
+  );
+  const ownerFeeUsd = roundMoney(
+    settlementCurrency === "USD"
+      ? ownerFeeAmount
+      : ownerFeeAmount / globalRate,
+  );
 
   if (selected.pricedUsd <= 0 || selected.averagePrice === null) {
     return {
@@ -49,6 +65,12 @@ export function calculateWireProfit({
       fifoCostCup: null,
       profitCup: null,
       profitUsd: null,
+      ownerFeePercent: roundMoney(ownerFeePercent),
+      ownerFeeAmount,
+      ownerFeeCup,
+      ownerFeeUsd,
+      netProfitCup: null,
+      netProfitUsd: null,
     };
   }
 
@@ -62,6 +84,7 @@ export function calculateWireProfit({
     ? settlementAmount
     : roundMoney(settlementAmount * globalRate);
   const profitCup = roundMoney(revenueCup - fifoCostCup);
+  const netProfitCup = roundMoney(profitCup - ownerFeeCup);
 
   return {
     status,
@@ -70,5 +93,11 @@ export function calculateWireProfit({
     fifoCostCup,
     profitCup,
     profitUsd: roundMoney(profitCup / globalRate),
+    ownerFeePercent: roundMoney(ownerFeePercent),
+    ownerFeeAmount,
+    ownerFeeCup,
+    ownerFeeUsd,
+    netProfitCup,
+    netProfitUsd: roundMoney(netProfitCup / globalRate),
   };
 }

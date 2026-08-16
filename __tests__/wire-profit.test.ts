@@ -23,6 +23,7 @@ describe("wire profit", () => {
       settlementCurrency: "CUP",
       conversionRate: 700,
       globalRate: 675,
+      ownerFeePercent: 2,
       selected: selected({}),
     })).toEqual({
       status: "EXACT",
@@ -31,6 +32,12 @@ describe("wire profit", () => {
       fifoCostCup: 6817000,
       profitCup: 183000,
       profitUsd: 271.11,
+      ownerFeePercent: 2,
+      ownerFeeAmount: 140000,
+      ownerFeeCup: 140000,
+      ownerFeeUsd: 207.41,
+      netProfitCup: 43000,
+      netProfitUsd: 63.7,
     });
   });
 
@@ -40,6 +47,7 @@ describe("wire profit", () => {
       settlementCurrency: "CUP",
       conversionRate: 700,
       globalRate: 675,
+      ownerFeePercent: 2,
       selected: selected({
         balanceUsd: 150,
         inventoryUsd: 150,
@@ -63,6 +71,7 @@ describe("wire profit", () => {
       settlementCurrency: "USD",
       feePercent: 5,
       globalRate: 675,
+      ownerFeePercent: 2,
       selected: selected({
         pricedUsd: 0,
         unpricedUsd: 100,
@@ -77,6 +86,28 @@ describe("wire profit", () => {
       fifoCostCup: null,
       profitCup: null,
       profitUsd: null,
+      ownerFeePercent: 2,
+      ownerFeeAmount: 2,
+      ownerFeeCup: 1350,
+      ownerFeeUsd: 2,
+      netProfitCup: null,
+      netProfitUsd: null,
+    });
+  });
+
+  it("uses the USD principal instead of the client surcharge for the owner commission", () => {
+    expect(calculateWireProfit({
+      principalUsd: 10000,
+      settlementCurrency: "USD",
+      feePercent: 5,
+      globalRate: 675,
+      ownerFeePercent: 2,
+      selected: selected({ pricedUsd: 10000, unpricedUsd: 0, costCup: 6800000 }),
+    })).toMatchObject({
+      settlementAmount: 10500,
+      ownerFeeAmount: 200,
+      ownerFeeCup: 135000,
+      netProfitCup: 152500,
     });
   });
 });

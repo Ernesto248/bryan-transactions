@@ -55,6 +55,12 @@ function mapMovementRow(row: any): AccountMovement {
                 fifoCostCup: row.wireProfitFifoCostCup == null ? null : Number(row.wireProfitFifoCostCup),
                 profitCup: row.wireProfitCup == null ? null : Number(row.wireProfitCup),
                 profitUsd: row.wireProfitUsd == null ? null : Number(row.wireProfitUsd),
+                ownerFeePercent: row.wireOwnerFeePercent == null ? null : Number(row.wireOwnerFeePercent),
+                ownerFeeAmount: row.wireOwnerFeeAmount == null ? null : Number(row.wireOwnerFeeAmount),
+                ownerFeeCup: row.wireOwnerFeeCup == null ? null : Number(row.wireOwnerFeeCup),
+                ownerFeeUsd: row.wireOwnerFeeUsd == null ? null : Number(row.wireOwnerFeeUsd),
+                netProfitCup: row.wireNetProfitCup == null ? null : Number(row.wireNetProfitCup),
+                netProfitUsd: row.wireNetProfitUsd == null ? null : Number(row.wireNetProfitUsd),
               }
             : null,
           selected: {
@@ -193,7 +199,13 @@ export async function GET(request: Request, { params }: Params) {
         m.wire_profit_global_rate as "wireProfitGlobalRate",
         m.wire_profit_fifo_cost_cup as "wireProfitFifoCostCup",
         m.wire_profit_cup as "wireProfitCup",
-        m.wire_profit_usd as "wireProfitUsd"
+        m.wire_profit_usd as "wireProfitUsd",
+        m.wire_owner_fee_percent as "wireOwnerFeePercent",
+        m.wire_owner_fee_amount as "wireOwnerFeeAmount",
+        m.wire_owner_fee_cup as "wireOwnerFeeCup",
+        m.wire_owner_fee_usd as "wireOwnerFeeUsd",
+        m.wire_net_profit_cup as "wireNetProfitCup",
+        m.wire_net_profit_usd as "wireNetProfitUsd"
       FROM account_outflow_movements m
       LEFT JOIN finance_counterparties counterparty ON counterparty.id = m.counterparty_id
       WHERE m.gmail_account_id = $1

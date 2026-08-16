@@ -61,6 +61,15 @@ describe("finance APIs", () => {
           lifetimeExactCount: 1,
           lifetimeEstimatedCount: 0,
           lifetimePendingCount: 1,
+          lifetimeOwnerFeeCup: 140000,
+          lifetimeOwnerFeeUsd: 207.41,
+          lifetimeNetProfitCup: 43000,
+          lifetimeNetProfitUsd: 63.7,
+          lifetimeNetExactProfitCup: 43000,
+          lifetimeNetExactProfitUsd: 63.7,
+          lifetimeNetExactCount: 1,
+          lifetimeNetEstimatedCount: 0,
+          lifetimeNetPendingCount: 1,
           monthProfitCup: 183000,
           monthProfitUsd: 271.11,
           monthExactProfitCup: 183000,
@@ -70,6 +79,15 @@ describe("finance APIs", () => {
           monthExactCount: 1,
           monthEstimatedCount: 0,
           monthPendingCount: 0,
+          monthOwnerFeeCup: 140000,
+          monthOwnerFeeUsd: 207.41,
+          monthNetProfitCup: 43000,
+          monthNetProfitUsd: 63.7,
+          monthNetExactProfitCup: 43000,
+          monthNetExactProfitUsd: 63.7,
+          monthNetExactCount: 1,
+          monthNetEstimatedCount: 0,
+          monthNetPendingCount: 0,
         },
       }],
       [
@@ -92,8 +110,8 @@ describe("finance APIs", () => {
     expect(json.overview.totals.remeseros.netCup).toBe(-84000);
     expect(json.overview.totals.capitalTotalUsd).toBe(350);
     expect(json.overview.totals.wireProfits).toEqual({
-      lifetime: expect.objectContaining({ profitCup: 183000, profitUsd: 271.11, exactCount: 1, pendingCount: 1 }),
-      currentMonth: expect.objectContaining({ profitCup: 183000, profitUsd: 271.11, exactCount: 1, pendingCount: 0 }),
+      lifetime: expect.objectContaining({ profitCup: 183000, ownerFeeCup: 140000, netProfitCup: 43000, netProfitUsd: 63.7, netExactCount: 1, netPendingCount: 1 }),
+      currentMonth: expect.objectContaining({ profitCup: 183000, ownerFeeCup: 140000, netProfitCup: 43000, netProfitUsd: 63.7, netExactCount: 1, netPendingCount: 0 }),
     });
     expect(json.overview.expenses[0]).toMatchObject({
       currency: "CUP",

@@ -50,6 +50,30 @@ const overview: FinanceOverview = {
       netCupUsd: -100,
     },
     capitalTotalUsd: 350,
+    wireProfits: {
+      lifetime: {
+        profitCup: 183000, profitUsd: 271.11,
+        exactProfitCup: 183000, exactProfitUsd: 271.11,
+        estimatedProfitCup: 0, estimatedProfitUsd: 0,
+        exactCount: 1, estimatedCount: 0, pendingCount: 0,
+        ownerFeeCup: 140000, ownerFeeUsd: 207.41,
+        netProfitCup: 43000, netProfitUsd: 63.7,
+        netExactProfitCup: 43000, netExactProfitUsd: 63.7,
+        netEstimatedProfitCup: 0, netEstimatedProfitUsd: 0,
+        netExactCount: 1, netEstimatedCount: 0, netPendingCount: 0,
+      },
+      currentMonth: {
+        profitCup: 183000, profitUsd: 271.11,
+        exactProfitCup: 183000, exactProfitUsd: 271.11,
+        estimatedProfitCup: 0, estimatedProfitUsd: 0,
+        exactCount: 1, estimatedCount: 0, pendingCount: 0,
+        ownerFeeCup: 140000, ownerFeeUsd: 207.41,
+        netProfitCup: 43000, netProfitUsd: 63.7,
+        netExactProfitCup: 43000, netExactProfitUsd: 63.7,
+        netEstimatedProfitCup: 0, netEstimatedProfitUsd: 0,
+        netExactCount: 1, netEstimatedCount: 0, netPendingCount: 0,
+      },
+    },
   },
   counterparties: [],
   settingChanges: [],
@@ -74,6 +98,8 @@ describe("FinancesView", () => {
     expect(screen.getByText("Zelle USD")).toBeTruthy();
     expect(screen.getByText("Deuda con remeseros")).toBeTruthy();
     expect(screen.getByText("Externas por pagar")).toBeTruthy();
+    expect(screen.getByText("Ganancia de wires")).toBeTruthy();
+    expect(screen.getAllByText("43,000 CUP")).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledWith("/api/finances?view=summary", { cache: "no-store" });
   });
 

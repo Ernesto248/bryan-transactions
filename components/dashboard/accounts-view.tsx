@@ -6,6 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -32,6 +40,7 @@ type AccountMovementInput = {
   conversionRate?: number;
   feePercent?: number;
   wireFeeUsd?: number;
+  ownerFeePercent?: number;
 };
 
 type AccountsViewProps = {
@@ -45,6 +54,11 @@ type AccountsViewProps = {
   onCreateMovement: (
     accountId: string,
     input: AccountMovementInput,
+  ) => Promise<boolean>;
+  onUpdateAccountOwnerFee: (
+    accountId: string,
+    ownerFeePercent: number,
+    note?: string,
   ) => Promise<boolean>;
   onRevertMovement: (
     accountId: string,
@@ -62,6 +76,7 @@ export function AccountsView({
   onRefreshAccounts,
   onLoadMovements,
   onCreateMovement,
+  onUpdateAccountOwnerFee,
   onRevertMovement,
 }: AccountsViewProps) {
   const [expandedById, setExpandedById] = useState<Record<string, boolean>>({});
@@ -83,12 +98,17 @@ export function AccountsView({
         conversionRate: string;
         feePercent: string;
         wireFeeUsd: string;
+        ownerFeePercent: string;
       }
     >
   >({});
   const [counterparties, setCounterparties] = useState<Array<{ id: string; name: string }>>([]);
   const [fifoPreviewByAccount, setFifoPreviewByAccount] = useState<Record<string, WireFifoPreview | null>>({});
   const [loadingFifoPreviewByAccount, setLoadingFifoPreviewByAccount] = useState<Record<string, boolean>>({});
+  const [ownerFeeDialogAccount, setOwnerFeeDialogAccount] = useState<AccountBalance | null>(null);
+  const [ownerFeeDialogValue, setOwnerFeeDialogValue] = useState("");
+  const [ownerFeeDialogNote, setOwnerFeeDialogNote] = useState("");
+  const [savingOwnerFee, setSavingOwnerFee] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -113,6 +133,9 @@ export function AccountsView({
       const wireFeeUsd = parseFinanceNumberInput(draft?.wireFeeUsd ?? "0");
       const conversionRate = parseFinanceNumberInput(draft?.conversionRate ?? "");
       const feePercent = parseFinanceNumberInput(draft?.feePercent ?? "");
+      const ownerFeePercent = parseFinanceNumberInput(
+        draft?.ownerFeePercent ?? (account.ownerFeePercent == null ? "" : String(account.ownerFeePercent)),
+      );
       const settlementCurrency = draft?.settlementCurrency ?? "CUP";
       const shouldLoad = expandedById[account.id] === true
         && (draft?.movementType ?? "wire") === "wire"
@@ -142,6 +165,9 @@ export function AccountsView({
         } else if (settlementCurrency === "USD" && Number.isFinite(feePercent) && feePercent >= 0) {
           params.set("settlementCurrency", settlementCurrency);
           params.set("feePercent", String(feePercent));
+        }
+        if (Number.isFinite(ownerFeePercent) && ownerFeePercent >= 0 && ownerFeePercent <= 100) {
+          params.set("ownerFeePercent", String(ownerFeePercent));
         }
         void fetch(`/api/accounts/${account.id}/wire-preview?${params}`, {
           cache: "no-store",
@@ -212,6 +238,9 @@ export function AccountsView({
         conversionRate: "",
         feePercent: "",
         wireFeeUsd: "0",
+        ownerFeePercent: accounts.find((account) => account.id === accountId)?.ownerFeePercent == null
+          ? ""
+          : String(accounts.find((account) => account.id === accountId)?.ownerFeePercent),
       }
     );
   };
@@ -234,9 +263,11 @@ export function AccountsView({
     const conversionRate = parseFinanceNumberInput(draft.conversionRate);
     const feePercent = parseFinanceNumberInput(draft.feePercent);
     const wireFeeUsd = parseFinanceNumberInput(draft.wireFeeUsd);
+    const ownerFeePercent = parseFinanceNumberInput(draft.ownerFeePercent);
     if (draft.movementType === "wire" && draft.settlementCurrency === "CUP" && (!Number.isFinite(conversionRate) || conversionRate <= 0)) return;
     if (draft.movementType === "wire" && draft.settlementCurrency === "USD" && (!Number.isFinite(feePercent) || feePercent < 0)) return;
     if (draft.movementType === "wire" && (!Number.isFinite(wireFeeUsd) || wireFeeUsd < 0)) return;
+    if (draft.movementType === "wire" && (!Number.isFinite(ownerFeePercent) || ownerFeePercent < 0 || ownerFeePercent > 100)) return;
 
     setLoadingByAccount((prev) => ({ ...prev, [accountId]: true }));
 
@@ -251,6 +282,7 @@ export function AccountsView({
           conversionRate: draft.settlementCurrency === "CUP" ? conversionRate : undefined,
           feePercent: draft.settlementCurrency === "USD" ? feePercent : undefined,
           wireFeeUsd,
+          ownerFeePercent,
         } : {}),
       });
       if (!created) return;
@@ -265,6 +297,9 @@ export function AccountsView({
           conversionRate: "",
           feePercent: "",
           wireFeeUsd: "0",
+          ownerFeePercent: accounts.find((account) => account.id === accountId)?.ownerFeePercent == null
+            ? ""
+            : String(accounts.find((account) => account.id === accountId)?.ownerFeePercent),
         },
       }));
     } finally {
@@ -362,6 +397,7 @@ export function AccountsView({
           const draftRate = parseFinanceNumberInput(draft.conversionRate);
           const draftPercent = parseFinanceNumberInput(draft.feePercent);
           const draftWireFee = parseFinanceNumberInput(draft.wireFeeUsd);
+          const draftOwnerFee = parseFinanceNumberInput(draft.ownerFeePercent);
           const debtPreview = draft.movementType === "wire" && Number.isFinite(draftAmount) && draftAmount > 0
             ? draft.settlementCurrency === "CUP" && Number.isFinite(draftRate) && draftRate > 0
               ? draftAmount * draftRate
@@ -372,6 +408,8 @@ export function AccountsView({
           const wireFieldsValid = draft.movementType !== "wire" || (
             draft.counterpartyId.length > 0
             && Number.isFinite(draftWireFee) && draftWireFee >= 0
+            && account.ownerFeePercent != null
+            && Number.isFinite(draftOwnerFee) && draftOwnerFee >= 0 && draftOwnerFee <= 100
             && (draft.settlementCurrency === "CUP"
               ? Number.isFinite(draftRate) && draftRate > 0
               : Number.isFinite(draftPercent) && draftPercent >= 0)
@@ -398,19 +436,24 @@ export function AccountsView({
                       entrada: {formatDate(account.lastTransactionAt)}
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleExpanded(account.id)}
-                  >
-                    {isExpanded ? "Contraer" : "Expandir"}
-                    {isExpanded ? (
-                      <ChevronUp className="h-4 w-4 ml-1" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 ml-1" />
-                    )}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setOwnerFeeDialogAccount(account);
+                        setOwnerFeeDialogValue(account.ownerFeePercent == null ? "" : String(account.ownerFeePercent));
+                        setOwnerFeeDialogNote("");
+                      }}
+                    >
+                      Configurar comisión
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => toggleExpanded(account.id)}>
+                      {isExpanded ? "Contraer" : "Expandir"}
+                      {isExpanded ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -447,6 +490,11 @@ export function AccountsView({
                     <p className="text-sm font-medium text-foreground">
                       Registrar salida
                     </p>
+                    {account.ownerFeePercent == null ? (
+                      <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-300">
+                        Configura explícitamente la comisión del dueño antes del próximo wire. Puedes fijarla en 0%.
+                      </p>
+                    ) : null}
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                       <div className="space-y-1">
                         <Label className="text-xs text-muted-foreground">
@@ -531,6 +579,26 @@ export function AccountsView({
                               className="bg-secondary border-border"
                             />
                           </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Comisión del dueño (%)</Label>
+                            <Input
+                              inputMode="decimal"
+                              value={draft.ownerFeePercent}
+                              onChange={(event) => setDraftByAccount((previous) => ({
+                                ...previous,
+                                [account.id]: {
+                                  ...draft,
+                                  ownerFeePercent: formatFinanceNumberInput(event.target.value),
+                                },
+                              }))}
+                              placeholder={account.ownerFeePercent == null ? "Configura la cuenta" : String(account.ownerFeePercent)}
+                              disabled={account.ownerFeePercent == null}
+                              className="bg-secondary border-border"
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Reemplaza el predeterminado solo para este wire.
+                            </p>
+                          </div>
                         </>
                       ) : null}
                       <div className="space-y-1 md:col-span-2">
@@ -589,21 +657,25 @@ export function AccountsView({
                               </p>
                             ) : null}
                             {fifoPreview.profit ? (
-                              <div className="rounded-lg border border-border/60 bg-background/45 p-2">
+                              <div className={`rounded-lg border p-2 ${
+                                (fifoPreview.profit.netProfitCup ?? 0) < 0
+                                  ? "border-red-500/30 bg-red-500/10"
+                                  : "border-emerald-500/30 bg-emerald-500/10"
+                              }`}>
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">
-                                  Ganancia {fifoPreview.profit.status === "EXACT" ? "exacta" : fifoPreview.profit.status === "ESTIMATED" ? "estimada" : "pendiente"}
+                                  Ganancia neta {fifoPreview.profit.status === "EXACT" ? "exacta" : fifoPreview.profit.status === "ESTIMATED" ? "estimada" : "pendiente"}
                                 </p>
-                                {fifoPreview.profit.profitCup == null ? (
+                                {fifoPreview.profit.netProfitCup == null ? (
                                   <p className="mt-1 text-sm text-amber-300">No disponible: todo el Zelle seleccionado está sin precio.</p>
                                 ) : (
-                                  <p className={`mt-1 text-base font-semibold ${fifoPreview.profit.profitCup < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                                    {formatLocal(fifoPreview.profit.profitCup)} CUP · {formatLocal(fifoPreview.profit.profitUsd ?? 0)} USD
+                                  <p className={`mt-1 text-base font-semibold ${fifoPreview.profit.netProfitCup < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                    {formatLocal(fifoPreview.profit.netProfitCup)} CUP · {formatLocal(fifoPreview.profit.netProfitUsd ?? 0)} USD
                                   </p>
                                 )}
                                 <p className="mt-1 text-xs text-muted-foreground">
-                                  Cobro: {formatLocal(fifoPreview.profit.settlementAmount)} {draft.settlementCurrency}
-                                  {fifoPreview.profit.fifoCostCup == null ? "" : ` · Costo usado: ${formatLocal(fifoPreview.profit.fifoCostCup)} CUP`}
-                                  {` · Tasa global: ${formatLocal(fifoPreview.profit.globalRate)}`}
+                                  Bruta: {formatLocal(fifoPreview.profit.profitCup ?? 0)} CUP
+                                  {` · Comisión dueño (${formatLocal(fifoPreview.profit.ownerFeePercent ?? 0)}%): ${formatLocal(fifoPreview.profit.ownerFeeCup ?? 0)} CUP`}
+                                  {fifoPreview.profit.fifoCostCup == null ? "" : ` · Costo FIFO: ${formatLocal(fifoPreview.profit.fifoCostCup)} CUP`}
                                 </p>
                               </div>
                             ) : null}
@@ -620,6 +692,10 @@ export function AccountsView({
                         ) : fifoPreview.error === "global_rate_required" ? (
                           <p className="font-medium text-amber-300">
                             Configura una tasa global válida en Finanzas antes de registrar el wire.
+                          </p>
+                        ) : fifoPreview.error === "owner_fee_required" ? (
+                          <p className="font-medium text-amber-300">
+                            Configura la comisión del dueño de esta cuenta antes de registrar el wire.
                           </p>
                         ) : (
                           <p className="font-medium text-red-300">
@@ -709,11 +785,27 @@ export function AccountsView({
                                   Saldo después: {formatLocal(movement.fifoValuation.balanceAfterUsd)} USD
                                 </p>
                                 {movement.fifoValuation.profit ? (
-                                  <p className={`mt-1 font-medium ${(movement.fifoValuation.profit.profitCup ?? 0) < 0 ? "text-red-400" : "text-emerald-400"}`}>
-                                    {movement.fifoValuation.profit.profitCup == null
-                                      ? "Ganancia pendiente: Zelle sin precio"
-                                      : `Ganancia ${movement.fifoValuation.profit.status === "ESTIMATED" ? "estimada" : "exacta"}: ${formatLocal(movement.fifoValuation.profit.profitCup)} CUP · ${formatLocal(movement.fifoValuation.profit.profitUsd ?? 0)} USD`}
-                                  </p>
+                                  movement.fifoValuation.profit.ownerFeePercent == null ? (
+                                    <div className="mt-1">
+                                      <p className="font-medium">
+                                        Ganancia bruta: {formatLocal(movement.fifoValuation.profit.profitCup ?? 0)} CUP · {formatLocal(movement.fifoValuation.profit.profitUsd ?? 0)} USD
+                                      </p>
+                                      <p className="text-amber-300">Sin comisión histórica del dueño.</p>
+                                    </div>
+                                  ) : movement.fifoValuation.profit.status === "UNAVAILABLE" ? (
+                                    <p className="mt-1 text-amber-300">
+                                      Ganancia no disponible · Comisión dueño {formatLocal(movement.fifoValuation.profit.ownerFeeCup ?? 0)} CUP.
+                                    </p>
+                                  ) : (
+                                    <div className="mt-1">
+                                      <p className={`font-medium ${(movement.fifoValuation.profit.netProfitCup ?? 0) < 0 ? "text-red-400" : "text-emerald-400"}`}>
+                                        Ganancia neta {movement.fifoValuation.profit.status === "ESTIMATED" ? "estimada" : "exacta"}: {formatLocal(movement.fifoValuation.profit.netProfitCup ?? 0)} CUP · {formatLocal(movement.fifoValuation.profit.netProfitUsd ?? 0)} USD
+                                      </p>
+                                      <p>
+                                        Bruta {formatLocal(movement.fifoValuation.profit.profitCup ?? 0)} CUP · Comisión dueño {formatLocal(movement.fifoValuation.profit.ownerFeeCup ?? 0)} CUP ({formatLocal(movement.fifoValuation.profit.ownerFeePercent)}%)
+                                      </p>
+                                    </div>
+                                  )
                                 ) : (
                                   <p className="mt-1">Sin cálculo histórico de ganancia.</p>
                                 )}
@@ -777,6 +869,81 @@ export function AccountsView({
           </Card>
         )}
       </div>
+      <Dialog
+        open={ownerFeeDialogAccount != null}
+        onOpenChange={(open) => {
+          if (!open) setOwnerFeeDialogAccount(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurar comisión del dueño</DialogTitle>
+            <DialogDescription>
+              Define el porcentaje predeterminado para {ownerFeeDialogAccount?.accountName}. El cambio quedará auditado.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Porcentaje</Label>
+              <Input
+                inputMode="decimal"
+                value={ownerFeeDialogValue}
+                onChange={(event) => setOwnerFeeDialogValue(formatFinanceNumberInput(event.target.value))}
+                placeholder="2"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Nota (opcional)</Label>
+              <Input
+                value={ownerFeeDialogNote}
+                onChange={(event) => setOwnerFeeDialogNote(event.target.value)}
+                placeholder="Motivo del cambio"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOwnerFeeDialogAccount(null)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                savingOwnerFee
+                || ownerFeeDialogValue.trim() === ""
+                || !Number.isFinite(parseFinanceNumberInput(ownerFeeDialogValue))
+                || parseFinanceNumberInput(ownerFeeDialogValue) < 0
+                || parseFinanceNumberInput(ownerFeeDialogValue) > 100
+              }
+              onClick={async () => {
+                const value = parseFinanceNumberInput(ownerFeeDialogValue);
+                if (!ownerFeeDialogAccount || ownerFeeDialogValue.trim() === "" || !Number.isFinite(value) || value < 0 || value > 100) return;
+                setSavingOwnerFee(true);
+                try {
+                  const saved = await onUpdateAccountOwnerFee(
+                    ownerFeeDialogAccount.id,
+                    value,
+                    ownerFeeDialogNote.trim() || undefined,
+                  );
+                  if (saved) {
+                    setDraftByAccount((previous) => ({
+                      ...previous,
+                      [ownerFeeDialogAccount.id]: {
+                        ...getDraft(ownerFeeDialogAccount.id),
+                        ownerFeePercent: String(value),
+                      },
+                    }));
+                    setOwnerFeeDialogAccount(null);
+                  }
+                } finally {
+                  setSavingOwnerFee(false);
+                }
+              }}
+            >
+              {savingOwnerFee ? "Guardando..." : "Guardar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

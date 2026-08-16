@@ -11,6 +11,7 @@ const account: AccountBalance = {
   balance: 874.75,
   transactionCount: 1,
   lastTransactionAt: null,
+  ownerFeePercent: 2,
 };
 
 beforeAll(() => {
@@ -32,6 +33,7 @@ function renderAccountsView(onCreateMovement = vi.fn()) {
       onRefreshAccounts={vi.fn()}
       onLoadMovements={vi.fn().mockResolvedValue(undefined)}
       onCreateMovement={onCreateMovement}
+      onUpdateAccountOwnerFee={vi.fn().mockResolvedValue(true)}
       onRevertMovement={vi.fn()}
     />,
   );
@@ -99,6 +101,12 @@ describe("AccountsView", () => {
                 fifoCostCup: 85000,
                 profitCup: -15000,
                 profitUsd: -22.22,
+                ownerFeePercent: 2,
+                ownerFeeAmount: 1400,
+                ownerFeeCup: 1400,
+                ownerFeeUsd: 2.07,
+                netProfitCup: -16400,
+                netProfitUsd: -24.3,
               },
               selected: {
                 balanceUsd: 100,
@@ -140,7 +148,7 @@ describe("AccountsView", () => {
     expect(screen.getByText(/Quedarán 774.75 USD a un promedio de 680 CUP\/USD/i)).toBeTruthy();
     expect(screen.getByText(/hay 10 USD sin precio/i)).toBeTruthy();
     expect(screen.getByText(/Principal:/i)).toBeTruthy();
-    expect(screen.getByText(/Ganancia estimada/i)).toBeTruthy();
-    expect(screen.getByText(/-15,000 CUP/i)).toBeTruthy();
+    expect(screen.getByText(/Ganancia neta estimada/i)).toBeTruthy();
+    expect(screen.getByText(/-16,400 CUP/i)).toBeTruthy();
   });
 });

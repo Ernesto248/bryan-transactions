@@ -21,6 +21,7 @@ export async function GET(request: Request, { params }: Params) {
     settlementCurrency: z.enum(["USD", "CUP"]).optional(),
     conversionRate: z.coerce.number().finite().positive().optional(),
     feePercent: z.coerce.number().finite().min(0).optional(),
+    ownerFeePercent: z.coerce.number().finite().min(0).max(100).optional(),
   }).superRefine((value, context) => {
     if (value.settlementCurrency === "CUP" && value.conversionRate === undefined) {
       context.addIssue({ code: z.ZodIssueCode.custom, path: ["conversionRate"], message: "conversionRate is required" });
@@ -34,6 +35,7 @@ export async function GET(request: Request, { params }: Params) {
     settlementCurrency: searchParams.get("settlementCurrency") ?? undefined,
     conversionRate: searchParams.get("conversionRate") ?? undefined,
     feePercent: searchParams.get("feePercent") ?? undefined,
+    ownerFeePercent: searchParams.get("ownerFeePercent") ?? undefined,
   });
 
   if (!parsedParams.success || !query.success) {
@@ -75,6 +77,30 @@ export async function GET(request: Request, { params }: Params) {
       }, { status: 200 });
     }
 
+    const accountResult = await client.query(
+      `SELECT owner_fee_percent as "ownerFeePercent"
+       FROM gmail_accounts WHERE id = $1`,
+      [parsedParams.data.id],
+    );
+    const defaultOwnerFeePercent = accountResult.rows[0]?.ownerFeePercent == null
+      ? null
+      : Number(accountResult.rows[0].ownerFeePercent);
+    if (defaultOwnerFeePercent == null) {
+      return Response.json({
+        ok: true,
+        preview: {
+          ...fifoPreview,
+          requestedUsd: principalUsd,
+          principalUsd,
+          wireFeeUsd,
+          totalDebitUsd,
+          canCreate: false,
+          error: "owner_fee_required",
+          profit: null,
+        },
+      }, { status: 200 });
+    }
+
     const financeStateResult = await client.query(
       `SELECT usd_cup_rate as "usdCupRate" FROM finance_state WHERE id = 1`,
     );
@@ -109,6 +135,7 @@ export async function GET(request: Request, { params }: Params) {
           conversionRate: query.data.conversionRate,
           feePercent: query.data.feePercent,
           globalRate,
+          ownerFeePercent: query.data.ownerFeePercent ?? defaultOwnerFeePercent,
           selected: fifoPreview.selected,
         }),
       },

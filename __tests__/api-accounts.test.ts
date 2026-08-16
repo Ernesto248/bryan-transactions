@@ -66,7 +66,7 @@ describe("POST /api/accounts", () => {
   it("preserves decimal expense amounts", async () => {
     const { query, release } = createClient([
       [],
-      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120" }],
+      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120", ownerFeePercent: 2 }],
       [],
       [],
     ]);
@@ -95,7 +95,7 @@ describe("POST /api/accounts", () => {
   it("creates a CUP receivable linked to a wire", async () => {
     const { query } = createClient([
       [],
-      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120" }],
+      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120", ownerFeePercent: 2 }],
       [{ usdCupRate: 675 }],
       [{ id: "c-1" }],
       [{ balance: 1000 }],
@@ -126,7 +126,10 @@ describe("POST /api/accounts", () => {
     const accountCall = query.mock.calls.find(([sql]) => String(sql).includes("INSERT INTO account_outflow_movements"));
     expect(accountCall?.[1]).toEqual(expect.arrayContaining(["CUP", 700, 7000000, "d-1"]));
     expect(accountCall?.[1]).toEqual(expect.arrayContaining(["FIFO_PER_ACCOUNT", 10025, 0, 6817000, 680]));
-    expect(accountCall?.[1]).toEqual(expect.arrayContaining([25, "EXACT", 675, 6817000, 183000, 271.11]));
+    expect(accountCall?.[1]).toEqual(expect.arrayContaining([
+      25, "EXACT", 675, 6817000, 183000, 271.11,
+      2, 140000, 140000, 207.41, 43000, 63.7,
+    ]));
   });
 
   it("rejects a wire above the available account balance before creating debt", async () => {
@@ -136,7 +139,7 @@ describe("POST /api/accounts", () => {
     });
     const { query } = createClient([
       [],
-      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120" }],
+      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120", ownerFeePercent: 2 }],
       [],
     ]);
     const POST = await loadPostHandler();
@@ -175,10 +178,35 @@ describe("POST /api/accounts", () => {
     expect(response.status).toBe(400);
   });
 
+  it("requires an explicitly configured account owner fee before a wire", async () => {
+    createClient([
+      [],
+      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120", ownerFeePercent: null }],
+      [],
+    ]);
+    const POST = await loadPostHandler();
+    const response = await POST(new Request("http://localhost/api/accounts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        accountId: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120",
+        movementType: "wire",
+        amount: 100,
+        counterpartyId: "78de4fc2-ea93-49ac-a52f-b1ce22c0dded",
+        settlementCurrency: "CUP",
+        conversionRate: 700,
+        ownerFeePercent: 2,
+      }),
+    }));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: "owner_fee_required" });
+  });
+
   it("blocks a wire when the global rate has not been configured", async () => {
     const { query } = createClient([
       [],
-      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120" }],
+      [{ id: "2cfc4038-0f11-4f22-a7dd-cd7ec1597120", ownerFeePercent: 2 }],
       [{ usdCupRate: null }],
       [],
     ]);

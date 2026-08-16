@@ -57,6 +57,20 @@ export async function GET(request?: Request) {
               COUNT(*) FILTER (WHERE wire_profit_status = 'EXACT') as "lifetimeExactCount",
               COUNT(*) FILTER (WHERE wire_profit_status = 'ESTIMATED') as "lifetimeEstimatedCount",
               COUNT(*) FILTER (WHERE wire_profit_status = 'UNAVAILABLE') as "lifetimePendingCount",
+              COALESCE(SUM(wire_owner_fee_cup), 0) as "lifetimeOwnerFeeCup",
+              COALESCE(SUM(wire_owner_fee_usd), 0) as "lifetimeOwnerFeeUsd",
+              COALESCE(SUM(wire_net_profit_cup), 0) as "lifetimeNetProfitCup",
+              COALESCE(SUM(wire_net_profit_usd), 0) as "lifetimeNetProfitUsd",
+              COALESCE(SUM(wire_net_profit_cup) FILTER (WHERE wire_profit_status = 'EXACT'), 0) as "lifetimeNetExactProfitCup",
+              COALESCE(SUM(wire_net_profit_usd) FILTER (WHERE wire_profit_status = 'EXACT'), 0) as "lifetimeNetExactProfitUsd",
+              COALESCE(SUM(wire_net_profit_cup) FILTER (WHERE wire_profit_status = 'ESTIMATED'), 0) as "lifetimeNetEstimatedProfitCup",
+              COALESCE(SUM(wire_net_profit_usd) FILTER (WHERE wire_profit_status = 'ESTIMATED'), 0) as "lifetimeNetEstimatedProfitUsd",
+              COUNT(*) FILTER (WHERE wire_profit_status = 'EXACT' AND wire_owner_fee_percent IS NOT NULL) as "lifetimeNetExactCount",
+              COUNT(*) FILTER (WHERE wire_profit_status = 'ESTIMATED' AND wire_owner_fee_percent IS NOT NULL) as "lifetimeNetEstimatedCount",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'UNAVAILABLE'
+                  OR (wire_profit_status IN ('EXACT', 'ESTIMATED') AND wire_owner_fee_percent IS NULL)
+              ) as "lifetimeNetPendingCount",
               COALESCE(SUM(wire_profit_cup) FILTER (
                 WHERE wire_profit_status IN ('EXACT', 'ESTIMATED')
                   AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
@@ -92,7 +106,44 @@ export async function GET(request?: Request) {
               COUNT(*) FILTER (
                 WHERE wire_profit_status = 'UNAVAILABLE'
                   AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
-              ) as "monthPendingCount"
+              ) as "monthPendingCount",
+              COALESCE(SUM(wire_owner_fee_cup) FILTER (
+                WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthOwnerFeeCup",
+              COALESCE(SUM(wire_owner_fee_usd) FILTER (
+                WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthOwnerFeeUsd",
+              COALESCE(SUM(wire_net_profit_cup) FILTER (
+                WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetProfitCup",
+              COALESCE(SUM(wire_net_profit_usd) FILTER (
+                WHERE created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetProfitUsd",
+              COALESCE(SUM(wire_net_profit_cup) FILTER (
+                WHERE wire_profit_status = 'EXACT' AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetExactProfitCup",
+              COALESCE(SUM(wire_net_profit_usd) FILTER (
+                WHERE wire_profit_status = 'EXACT' AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetExactProfitUsd",
+              COALESCE(SUM(wire_net_profit_cup) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED' AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetEstimatedProfitCup",
+              COALESCE(SUM(wire_net_profit_usd) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED' AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ), 0) as "monthNetEstimatedProfitUsd",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'EXACT' AND wire_owner_fee_percent IS NOT NULL
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthNetExactCount",
+              COUNT(*) FILTER (
+                WHERE wire_profit_status = 'ESTIMATED' AND wire_owner_fee_percent IS NOT NULL
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthNetEstimatedCount",
+              COUNT(*) FILTER (
+                WHERE (wire_profit_status = 'UNAVAILABLE'
+                    OR (wire_profit_status IN ('EXACT', 'ESTIMATED') AND wire_owner_fee_percent IS NULL))
+                  AND created_at >= date_trunc('month', now() AT TIME ZONE 'America/New_York') AT TIME ZONE 'America/New_York'
+              ) as "monthNetPendingCount"
             FROM account_outflow_movements
             WHERE reverted_at IS NULL
           ) profit_row) AS wire_profits,
@@ -175,6 +226,17 @@ export async function GET(request?: Request) {
       exactCount: toNumber(profitRow[`${prefix}ExactCount`]),
       estimatedCount: toNumber(profitRow[`${prefix}EstimatedCount`]),
       pendingCount: toNumber(profitRow[`${prefix}PendingCount`]),
+      ownerFeeCup: toNumber(profitRow[`${prefix}OwnerFeeCup`]),
+      ownerFeeUsd: toNumber(profitRow[`${prefix}OwnerFeeUsd`]),
+      netProfitCup: toNumber(profitRow[`${prefix}NetProfitCup`]),
+      netProfitUsd: toNumber(profitRow[`${prefix}NetProfitUsd`]),
+      netExactProfitCup: toNumber(profitRow[`${prefix}NetExactProfitCup`]),
+      netExactProfitUsd: toNumber(profitRow[`${prefix}NetExactProfitUsd`]),
+      netEstimatedProfitCup: toNumber(profitRow[`${prefix}NetEstimatedProfitCup`]),
+      netEstimatedProfitUsd: toNumber(profitRow[`${prefix}NetEstimatedProfitUsd`]),
+      netExactCount: toNumber(profitRow[`${prefix}NetExactCount`]),
+      netEstimatedCount: toNumber(profitRow[`${prefix}NetEstimatedCount`]),
+      netPendingCount: toNumber(profitRow[`${prefix}NetPendingCount`]),
     });
 
     const state = stateResult.rows[0] ?? {};
