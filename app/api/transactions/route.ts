@@ -116,7 +116,7 @@ const PageQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(30),
   cursor: z.string().trim().optional(),
   bank: z.string().trim().optional(), account: z.string().trim().optional(),
-  search: z.string().trim().optional(), sender: z.string().trim().optional(),
+  search: z.string().trim().optional(), sender: z.string().trim().optional(), code: z.string().trim().optional(),
   amount: z.coerce.number().finite().optional(), remesero: z.string().trim().optional(),
   from: z.string().datetime({ offset: true }).optional(), to: z.string().datetime({ offset: true }).optional(),
 });

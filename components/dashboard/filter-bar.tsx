@@ -51,6 +51,8 @@ interface FilterBarProps {
   setSearchQuery: (value: string) => void;
   senderFilter: string;
   setSenderFilter: (value: string) => void;
+  codeFilter: string;
+  setCodeFilter: (value: string) => void;
   amountFilter: string;
   setAmountFilter: (value: string) => void;
   remeseroFilter: string;
@@ -85,6 +87,8 @@ export function FilterBar({
   setSearchQuery,
   senderFilter,
   setSenderFilter,
+  codeFilter,
+  setCodeFilter,
   amountFilter,
   setAmountFilter,
   remeseroFilter,
@@ -101,6 +105,7 @@ export function FilterBar({
     bankFilter !== "all" ||
     accountFilter !== "all" ||
     senderFilter.trim() !== "" ||
+    codeFilter.trim() !== "" ||
     remeseroFilter !== "all" ||
     amountFilter.trim() !== "" ||
     dateFilter !== "all";
@@ -109,6 +114,7 @@ export function FilterBar({
     bankFilter !== "all",
     accountFilter !== "all",
     senderFilter.trim() !== "",
+    codeFilter.trim() !== "",
     remeseroFilter !== "all",
     amountFilter.trim() !== "",
     dateFilter !== "all",
@@ -118,6 +124,7 @@ export function FilterBar({
     setBankFilter("all");
     setAccountFilter("all");
     setSenderFilter("");
+    setCodeFilter("");
     setRemeseroFilter("all");
     setAmountFilter("");
     setSearchQuery("");
@@ -334,8 +341,8 @@ export function FilterBar({
               </div>
             </div>
 
-            {/* Sender, amount and remesero filters */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {/* Sender, code, amount and remesero filters */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
               <div className="space-y-2">
                 <span className="text-sm font-medium text-muted-foreground">
                   Sender
@@ -344,6 +351,17 @@ export function FilterBar({
                   value={senderFilter}
                   onChange={(e) => setSenderFilter(e.target.value)}
                   placeholder="Nombre del sender"
+                  className="bg-secondary border-border text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="space-y-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Código
+                </span>
+                <Input
+                  value={codeFilter}
+                  onChange={(e) => setCodeFilter(e.target.value)}
+                  placeholder="Código de confirmación"
                   className="bg-secondary border-border text-foreground placeholder:text-muted-foreground"
                 />
               </div>

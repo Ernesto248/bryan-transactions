@@ -14,6 +14,7 @@ export type TransactionFeedFilters = {
   account?: string;
   search?: string;
   sender?: string;
+  code?: string;
   amount?: number;
   remesero?: string;
   from?: string;
@@ -50,6 +51,7 @@ function buildFilter(filters: TransactionFeedFilters): SqlFilter {
   if (filters.account) result.clauses.push(`g.account_name = ${addValue(result, filters.account)}`);
   if (filters.search) result.clauses.push(`COALESCE(t.actor_name, '') ILIKE ${addValue(result, `%${filters.search}%`)}`);
   if (filters.sender) result.clauses.push(`COALESCE(t.actor_name, '') ILIKE ${addValue(result, `%${filters.sender}%`)}`);
+  if (filters.code) result.clauses.push(`STRPOS(LOWER(COALESCE(t.confirmation_code, '')), LOWER(${addValue(result, filters.code)})) > 0`);
   if (filters.amount !== undefined) result.clauses.push(`t.amount = ${addValue(result, filters.amount)}`);
   if (filters.remesero === "unassigned") result.clauses.push("rta.id IS NULL");
   else if (filters.remesero) result.clauses.push(`r.nombre = ${addValue(result, filters.remesero)}`);
